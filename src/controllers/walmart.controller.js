@@ -62,9 +62,11 @@ const getListings = asyncHandler(async (req, res) => {
     status: Joi.string().valid('PUBLISHED', 'UNPUBLISHED', 'ALL').default('PUBLISHED')
   });
 
+  // Validate params from both query and headers
   const { error, value } = schema.validate({
     ...req.query,
-    ...req.headers
+    clientId: req.headers.clientid,
+    clientSecret: req.headers.clientsecret
   });
 
   if (error) {
@@ -72,30 +74,39 @@ const getListings = asyncHandler(async (req, res) => {
   }
 
   const { clientId, clientSecret, limit, offset, status } = value;
-
-  // Get access token
-  const tokenData = await walmartService.getAccessToken(clientId, clientSecret);
   
-  // Get listings
-  const listings = await walmartService.getListings(tokenData.accessToken, {
-    limit,
-    offset,
-    status
-  });
+  try {
+    // Get access token
+    const tokenData = await walmartService.getAccessToken(clientId, clientSecret);
+    
+    // Get listings
+    const listings = await walmartService.getListings(tokenData.accessToken, {
+      limit,
+      offset,
+      status
+    });
 
-  // Transform response to a more consumable format
-  const formattedListings = listings.ItemResponse 
-    ? listings.ItemResponse.map(item => simplifyWalmartItem(item))
-    : [];
+    // Transform response to a more consumable format
+    const formattedListings = listings.ItemResponse 
+      ? listings.ItemResponse.map(item => simplifyWalmartItem(item))
+      : [];
 
-  return res.status(200).json({
-    success: true,
-    count: formattedListings.length,
-    totalCount: listings.totalItems || 0,
-    offset,
-    limit,
-    data: formattedListings
-  });
+    return res.status(200).json({
+      success: true,
+      count: formattedListings.length,
+      totalCount: listings.totalItems || 0,
+      offset,
+      limit,
+      data: formattedListings
+    });
+  } catch (error) {
+    console.error('Error in getListings controller:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to get listings',
+      error: error.response ? error.response.data : null
+    });
+  }
 });
 
 /**
@@ -117,7 +128,8 @@ const getListingById = asyncHandler(async (req, res) => {
   });
 
   const { error, value } = schema.validate({
-    ...req.headers
+    clientId: req.headers.clientid,
+    clientSecret: req.headers.clientsecret
   });
 
   if (error) {
@@ -126,16 +138,25 @@ const getListingById = asyncHandler(async (req, res) => {
 
   const { clientId, clientSecret } = value;
 
-  // Get access token
-  const tokenData = await walmartService.getAccessToken(clientId, clientSecret);
-  
-  // Get listing details
-  const listing = await walmartService.getListingById(tokenData.accessToken, id);
+  try {
+    // Get access token
+    const tokenData = await walmartService.getAccessToken(clientId, clientSecret);
+    
+    // Get listing details
+    const listing = await walmartService.getListingById(tokenData.accessToken, id);
 
-  return res.status(200).json({
-    success: true,
-    data: simplifyWalmartItem(listing)
-  });
+    return res.status(200).json({
+      success: true,
+      data: simplifyWalmartItem(listing)
+    });
+  } catch (error) {
+    console.error('Error in getListingById controller:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || `Failed to get listing with ID ${id}`,
+      error: error.response ? error.response.data : null
+    });
+  }
 });
 
 module.exports = {
