@@ -3,7 +3,7 @@ require('dotenv').config();
 module.exports = {
   port: process.env.PORT || 8000,
   env: process.env.NODE_ENV || 'development',
-  corsOrigin: process.env.CORS_ORIGIN || '*',
+  corsOrigin: process.env.CORS_ORIGIN || '*', // Default to allow all origins if not specified
   
   // Walmart API configuration
   walmart: {
