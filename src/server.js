@@ -12,50 +12,71 @@ const app = express();
 // Apply middlewares
 app.use(helmet()); // Security headers
 app.use(morgan('dev')); // Request logging
-app.use(express.json()); // Parse JSON bodies
-app.use(express.urlencoded({ extended: true })); // Parse URL-encoded bodies
 
-// Configure CORS with more detailed options
+// CORS configuration - this needs to be before other middleware
+const allowedOrigins = [
+  'https://nexus.nanotomlogistics.com',
+  config.corsOrigin // Fallback to environment variable
+];
+
+// Add development origins if in development mode
+if (config.env === 'development') {
+  allowedOrigins.push(
+    'http://localhost:3000',
+    'http://localhost:8080',
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:8080'
+  );
+}
+
+// Log allowed origins for debugging
+console.log('Allowed CORS origins:', allowedOrigins);
+
+// CORS middleware implementation
 app.use(cors({
   origin: function(origin, callback) {
     // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
+    if (!origin) {
+      console.log('Allowing request with no origin');
+      return callback(null, true);
+    }
     
     // Check if origin is allowed
-    const allowedOrigins = [config.corsOrigin];
-    if (config.env === 'development') {
-      // In development, accept localhost origins
-      allowedOrigins.push('http://localhost:3000');
-      allowedOrigins.push('http://localhost:8080');
-      allowedOrigins.push('http://127.0.0.1:3000');
-      allowedOrigins.push('http://127.0.0.1:8080');
+    if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+      console.log(`Allowing request from origin: ${origin}`);
+      return callback(null, true);
     }
     
-    if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    } else {
-      console.log('CORS blocked request from:', origin);
-      return callback(null, false);
-    }
+    console.log(`Blocking request from origin: ${origin}`);
+    return callback(new Error(`Origin ${origin} not allowed by CORS`), false);
   },
+  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'clientId', 'clientSecret', 'x-requested-with'],
-  credentials: true,
-  maxAge: 86400 // 24 hours
+  preflightContinue: false,
+  optionsSuccessStatus: 204
 }));
+
+// Handle preflight requests explicitly
+app.options('*', cors());
+
+// Body parsing - after CORS middleware
+app.use(express.json()); // Parse JSON bodies
+app.use(express.urlencoded({ extended: true })); // Parse URL-encoded bodies
 
 // Log requests for debugging
 app.use((req, res, next) => {
   console.log(`${req.method} ${req.url}`);
-  console.log('Headers:', Object.keys(req.headers).reduce((acc, key) => {
-    // Don't log sensitive headers
-    if (!['authorization', 'clientsecret', 'clientid'].includes(key.toLowerCase())) {
-      acc[key] = req.headers[key];
-    } else {
-      acc[key] = '[REDACTED]';
+  const safeHeaders = { ...req.headers };
+  
+  // Don't log sensitive headers
+  ['authorization', 'clientsecret', 'clientid'].forEach(header => {
+    if (safeHeaders[header]) {
+      safeHeaders[header] = '[REDACTED]';
     }
-    return acc;
-  }, {}));
+  });
+  
+  console.log('Headers:', safeHeaders);
   next();
 });
 
@@ -69,6 +90,7 @@ app.use('/api/walmart', walmartRoutes);
 
 // 404 handler
 app.use((req, res) => {
+  console.log(`Route not found: ${req.method} ${req.url}`);
   res.status(404).json({ message: 'Not found' });
 });
 
@@ -79,6 +101,7 @@ app.use(errorHandler);
 const PORT = config.port;
 app.listen(PORT, () => {
   console.log(`Server running in ${config.env} mode on port ${PORT}`);
+  console.log(`CORS configured for origins: ${allowedOrigins.join(', ')}`);
 });
 
 module.exports = app;
