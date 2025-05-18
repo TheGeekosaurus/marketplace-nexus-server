@@ -22,23 +22,35 @@ class WalmartService {
     try {
       // Create Basic auth header using client ID and secret
       const authString = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+      const correlationId = uuidv4();
 
-      const response = await axios.post(
-        this.tokenUrl,
-        'grant_type=client_credentials',
-        {
-          headers: {
-            'Authorization': `Basic ${authString}`,
-            'WM_SVC.NAME': 'Walmart Marketplace',
-            'WM_QOS.CORRELATION_ID': uuidv4(),
-            'Content-Type': 'application/x-www-form-urlencoded'
-          },
-          timeout: config.walmart.requestTimeout
-        }
-      );
+      console.log('Attempting to get Walmart access token');
+      console.log('Headers:', {
+        'Authorization': `Basic ${authString.substring(0, 10)}...`, // Truncated for security
+        'WM_SVC.NAME': 'Walmart Marketplace',
+        'WM_QOS.CORRELATION_ID': correlationId,
+        'Content-Type': 'application/x-www-form-urlencoded'
+      });
 
+      const response = await axios({
+        method: 'post',
+        url: this.tokenUrl,
+        headers: {
+          'Authorization': `Basic ${authString}`,
+          'WM_SVC.NAME': 'Walmart Marketplace',
+          'WM_QOS.CORRELATION_ID': correlationId,
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept': 'application/json'
+        },
+        data: 'grant_type=client_credentials',
+        timeout: config.walmart.requestTimeout
+      });
+
+      console.log('Token API response status:', response.status);
+      
       if (!response.data || !response.data.access_token) {
-        throw new Error('Invalid response from Walmart API');
+        console.error('Invalid response from Walmart API:', response.data);
+        throw new Error('Invalid response from Walmart API: Missing access_token');
       }
 
       return {
@@ -49,10 +61,45 @@ class WalmartService {
     } catch (error) {
       console.error('Error getting Walmart access token:', error.message);
       if (error.response) {
-        console.error('Response data:', error.response.data);
         console.error('Response status:', error.response.status);
+        console.error('Response data:', JSON.stringify(error.response.data, null, 2));
+        console.error('Response headers:', JSON.stringify(error.response.headers, null, 2));
+      } else if (error.request) {
+        console.error('No response received:', error.request);
       }
       throw new Error(`Failed to get Walmart access token: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get token details to verify permissions
+   * @param {string} accessToken - Walmart API access token 
+   * @returns {Promise<object>} - Token detail information
+   */
+  async getTokenDetail(accessToken) {
+    try {
+      const correlationId = uuidv4();
+      
+      const response = await axios({
+        method: 'get',
+        url: `${this.apiUrl}/${this.apiVersion}/token/detail`,
+        headers: {
+          'WM_SEC.ACCESS_TOKEN': accessToken,
+          'WM_SVC.NAME': 'Walmart Marketplace',
+          'WM_QOS.CORRELATION_ID': correlationId,
+          'Accept': 'application/json'
+        },
+        timeout: config.walmart.requestTimeout
+      });
+
+      return response.data;
+    } catch (error) {
+      console.error('Error getting token details:', error.message);
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', JSON.stringify(error.response.data, null, 2));
+      }
+      throw new Error(`Failed to get token details: ${error.message}`);
     }
   }
 
@@ -64,7 +111,16 @@ class WalmartService {
    */
   async validateCredentials(clientId, clientSecret) {
     try {
-      await this.getAccessToken(clientId, clientSecret);
+      const tokenData = await this.getAccessToken(clientId, clientSecret);
+      
+      // Optionally verify token by getting token details
+      try {
+        await this.getTokenDetail(tokenData.accessToken);
+      } catch (detailError) {
+        console.warn('Could not get token details, but token was generated:', detailError.message);
+        // Continue anyway since we got the token successfully
+      }
+      
       return true;
     } catch (error) {
       console.error('Invalid Walmart credentials:', error.message);
@@ -81,26 +137,31 @@ class WalmartService {
   async getListings(accessToken, options = {}) {
     try {
       const { limit = 20, offset = 0, status = 'PUBLISHED' } = options;
+      const correlationId = uuidv4();
 
-      const response = await axios.get(
-        `${this.apiUrl}/${this.apiVersion}/items`,
-        {
-          headers: this._getHeaders(accessToken),
-          params: {
-            limit,
-            offset,
-            status
-          },
-          timeout: config.walmart.requestTimeout
-        }
-      );
+      const response = await axios({
+        method: 'get',
+        url: `${this.apiUrl}/${this.apiVersion}/items`,
+        headers: {
+          'WM_SEC.ACCESS_TOKEN': accessToken,
+          'WM_SVC.NAME': 'Walmart Marketplace',
+          'WM_QOS.CORRELATION_ID': correlationId,
+          'Accept': 'application/json'
+        },
+        params: {
+          limit,
+          offset,
+          status
+        },
+        timeout: config.walmart.requestTimeout
+      });
 
       return response.data;
     } catch (error) {
       console.error('Error fetching Walmart listings:', error.message);
       if (error.response) {
-        console.error('Response data:', error.response.data);
         console.error('Response status:', error.response.status);
+        console.error('Response data:', JSON.stringify(error.response.data, null, 2));
       }
       throw new Error(`Failed to fetch Walmart listings: ${error.message}`);
     }
@@ -114,39 +175,29 @@ class WalmartService {
    */
   async getListingById(accessToken, itemId) {
     try {
-      const response = await axios.get(
-        `${this.apiUrl}/${this.apiVersion}/items/${itemId}`,
-        {
-          headers: this._getHeaders(accessToken),
-          timeout: config.walmart.requestTimeout
-        }
-      );
+      const correlationId = uuidv4();
+      
+      const response = await axios({
+        method: 'get',
+        url: `${this.apiUrl}/${this.apiVersion}/items/${itemId}`,
+        headers: {
+          'WM_SEC.ACCESS_TOKEN': accessToken,
+          'WM_SVC.NAME': 'Walmart Marketplace',
+          'WM_QOS.CORRELATION_ID': correlationId,
+          'Accept': 'application/json'
+        },
+        timeout: config.walmart.requestTimeout
+      });
 
       return response.data;
     } catch (error) {
       console.error(`Error fetching Walmart listing ${itemId}:`, error.message);
       if (error.response) {
-        console.error('Response data:', error.response.data);
         console.error('Response status:', error.response.status);
+        console.error('Response data:', JSON.stringify(error.response.data, null, 2));
       }
       throw new Error(`Failed to fetch Walmart listing ${itemId}: ${error.message}`);
     }
-  }
-
-  /**
-   * Generate headers for Walmart API requests
-   * @param {string} accessToken - Walmart API access token
-   * @returns {object} - Headers object
-   * @private
-   */
-  _getHeaders(accessToken) {
-    return {
-      'Authorization': `Bearer ${accessToken}`,
-      'WM_SVC.NAME': 'Walmart Marketplace',
-      'WM_QOS.CORRELATION_ID': uuidv4(),
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
-    };
   }
 }
 
