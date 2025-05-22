@@ -1,32 +1,98 @@
- // routes/amazon.js
-  const express = require('express');
+const express = require('express');
   const router = express.Router();
   const amazonService = require('../services/amazonService');
 
   /**
-   * Validate Amazon SP-API credentials
+   * Get Amazon OAuth authorization URL
    */
-  router.post('/auth', async (req, res) => {
+  router.post('/auth-url', async (req, res) => {
     try {
-      const { clientId, clientSecret, refreshToken, sellerId } = req.body;
+      const { redirectUri } = req.body;
 
-      if (!clientId || !clientSecret || !refreshToken || !sellerId) {
+      if (!redirectUri) {
         return res.status(400).json({
           success: false,
-          message: 'Missing required credentials: clientId, clientSecret, refreshToken, sellerId'
+          message: 'Redirect URI is required'
         });
       }
 
-      const credentials = { clientId, clientSecret, refreshToken, sellerId };
-      const result = await amazonService.validateCredentials(credentials);
+      const result = amazonService.generateAuthUrl(redirectUri);
 
       res.json({
         success: true,
-        message: 'Amazon credentials validated successfully',
+        authUrl: result.authUrl,
+        state: result.state
+      });
+    } catch (error) {
+      console.error('Amazon auth URL error:', error.message);
+      res.status(500).json({
+        success: false,
+        message: error.message
+      });
+    }
+  });
+
+  /**
+   * Exchange authorization code for connection
+   */
+  router.post('/exchange-code', async (req, res) => {
+    try {
+      const { code, state, redirectUri } = req.body;
+
+      if (!code || !redirectUri) {
+        return res.status(400).json({
+          success: false,
+          message: 'Authorization code and redirect URI are required'
+        });
+      }
+
+      // Exchange code for tokens
+      const tokens = await amazonService.exchangeCodeForTokens(code, redirectUri);
+
+      // Validate connection and get seller info
+      const validation = await amazonService.validateConnection(tokens.refreshToken);
+
+      res.json({
+        success: true,
+        message: 'Amazon connection established successfully',
+        data: {
+          refreshToken: tokens.refreshToken,
+          sellerId: validation.sellerId,
+          isConnected: true
+        }
+      });
+    } catch (error) {
+      console.error('Amazon code exchange error:', error.message);
+      res.status(400).json({
+        success: false,
+        message: error.message
+      });
+    }
+  });
+
+  /**
+   * Validate existing Amazon connection
+   */
+  router.post('/validate', async (req, res) => {
+    try {
+      const { refreshToken, sellerId } = req.body;
+
+      if (!refreshToken || !sellerId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Refresh token and seller ID are required'
+        });
+      }
+
+      const result = await amazonService.validateConnection(refreshToken);
+
+      res.json({
+        success: true,
+        message: 'Amazon connection is valid',
         data: result
       });
     } catch (error) {
-      console.error('Amazon auth error:', error.message);
+      console.error('Amazon validation error:', error.message);
       res.status(400).json({
         success: false,
         message: error.message
@@ -40,19 +106,22 @@
   router.get('/listings', async (req, res) => {
     try {
       const { limit, nextToken, status } = req.query;
-      const { clientId, clientSecret, refreshToken, sellerId } = req.headers;
+      const { refreshtoken: refreshToken, sellerid: sellerId } = req.headers;
 
-      if (!clientId || !clientSecret || !refreshToken || !sellerId) {
+      if (!refreshToken || !sellerId) {
         return res.status(400).json({
           success: false,
-          message: 'Missing required credentials in headers'
+          message: 'Missing refresh token or seller ID in headers'
         });
       }
 
-      const credentials = { clientId, clientSecret, refreshToken, sellerId };
-      const options = { limit: parseInt(limit) || 20, nextToken, status };
+      const options = {
+        limit: parseInt(limit) || 20,
+        nextToken,
+        status
+      };
 
-      const result = await amazonService.getListings(credentials, options);
+      const result = await amazonService.getListings(refreshToken, sellerId, options);
       res.json(result);
     } catch (error) {
       console.error('Amazon listings error:', error.message);
@@ -69,17 +138,16 @@
   router.get('/listing/:sku', async (req, res) => {
     try {
       const { sku } = req.params;
-      const { clientId, clientSecret, refreshToken, sellerId } = req.headers;
+      const { refreshtoken: refreshToken, sellerid: sellerId } = req.headers;
 
-      if (!clientId || !clientSecret || !refreshToken || !sellerId) {
+      if (!refreshToken || !sellerId) {
         return res.status(400).json({
           success: false,
-          message: 'Missing required credentials in headers'
+          message: 'Missing refresh token or seller ID in headers'
         });
       }
 
-      const credentials = { clientId, clientSecret, refreshToken, sellerId };
-      const result = await amazonService.getListingBySku(credentials, sku);
+      const result = await amazonService.getListingBySku(refreshToken, sellerId, sku);
 
       res.json({
         success: true,
