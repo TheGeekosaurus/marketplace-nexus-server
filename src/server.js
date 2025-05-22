@@ -87,6 +87,7 @@ app.get('/health', (req, res) => {
 
 // API routes
 app.use('/api/walmart', walmartRoutes);
+app.use('/api/amazon', require('./routes/amazon'));
 
 // 404 handler
 app.use((req, res) => {
