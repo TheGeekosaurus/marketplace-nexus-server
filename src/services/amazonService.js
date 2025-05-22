@@ -1,32 +1,98 @@
-// services/amazonService.js
-  const axios = require('axios');
+const axios = require('axios');
+  const AWS = require('aws-sdk');
+  const crypto = require('crypto');
 
   // Amazon SP-API endpoints
   const ENDPOINTS = {
-    'us-east-1': 'https://sellingpartnerapi-na.amazon.com',
-    'eu-west-1': 'https://sellingpartnerapi-eu.amazon.com',
-    'us-west-2': 'https://sellingpartnerapi-fe.amazon.com'
+    'us-east-1': 'https://sellingpartnerapi-na.amazon.com'
   };
 
-  // US Marketplace ID
+  // US Marketplace ID (Production)
   const US_MARKETPLACE_ID = 'ATVPDKIKX0DER';
+
+  // LWA (Login with Amazon) endpoint
+  const LWA_ENDPOINT = 'https://api.amazon.com/auth/o2/token';
 
   class AmazonService {
     constructor() {
-      this.baseURL = ENDPOINTS['us-east-1']; // US only for now
+      this.baseURL = ENDPOINTS['us-east-1'];
       this.marketplaceId = US_MARKETPLACE_ID;
+      this.clientId = process.env.AMAZON_LWA_CLIENT_ID;
+      this.clientSecret = process.env.AMAZON_LWA_CLIENT_SECRET;
+      this.appId = process.env.AMAZON_APP_ID;
+      this.roleArn = process.env.AMAZON_IAM_ROLE_ARN;
+
+      if (!this.clientId || !this.clientSecret || !this.appId || !this.roleArn) {
+        console.error('Missing Amazon environment variables:', {
+          clientId: !!this.clientId,
+          clientSecret: !!this.clientSecret,
+          appId: !!this.appId,
+          roleArn: !!this.roleArn
+        });
+        throw new Error('Missing required Amazon environment variables');
+      }
+
+      // Configure AWS STS for role assumption
+      this.sts = new AWS.STS({ region: 'us-east-1' });
     }
 
     /**
-     * Exchange refresh token for access token
+     * Generate OAuth authorization URL
      */
-    async getAccessToken(credentials) {
+    generateAuthUrl(redirectUri) {
+      const state = crypto.randomBytes(16).toString('hex');
+
+      const params = new URLSearchParams({
+        client_id: this.appId,
+        scope: 'sellingpartnerapi::migration',
+        response_type: 'code',
+        redirect_uri: redirectUri,
+        state: state
+      });
+
+      const authUrl = `https://sellercentral.amazon.com/apps/authorize/consent?${params.toString()}`;
+
+      return { authUrl, state };
+    }
+
+    /**
+     * Exchange authorization code for refresh token
+     */
+    async exchangeCodeForTokens(authorizationCode, redirectUri) {
       try {
-        const response = await axios.post('https://api.amazon.com/auth/o2/token', {
+        const response = await axios.post(LWA_ENDPOINT, {
+          grant_type: 'authorization_code',
+          code: authorizationCode,
+          redirect_uri: redirectUri,
+          client_id: this.clientId,
+          client_secret: this.clientSecret
+        }, {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+          }
+        });
+
+        return {
+          refreshToken: response.data.refresh_token,
+          accessToken: response.data.access_token,
+          expiresIn: response.data.expires_in
+        };
+      } catch (error) {
+        console.error('Error exchanging authorization code:', error.response?.data || error.message);
+        throw new Error('Failed to exchange authorization code for tokens');
+      }
+    }
+
+    /**
+     * Get access token from refresh token
+     */
+    async getAccessToken(refreshToken) {
+      try {
+        const response = await axios.post(LWA_ENDPOINT, {
           grant_type: 'refresh_token',
-          refresh_token: credentials.refreshToken,
-          client_id: credentials.clientId,
-          client_secret: credentials.clientSecret
+          refresh_token: refreshToken,
+          client_id: this.clientId,
+          client_secret: this.clientSecret
         }, {
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded'
@@ -35,19 +101,19 @@
 
         return response.data.access_token;
       } catch (error) {
-        console.error('Error getting Amazon access token:', error.response?.data || error.message);
-        throw new Error('Failed to authenticate with Amazon SP-API');
+        console.error('Error getting access token:', error.response?.data || error.message);
+        throw new Error('Failed to get access token');
       }
     }
 
     /**
-     * Validate credentials by attempting to get seller info
+     * Validate connection and get seller info
      */
-    async validateCredentials(credentials) {
+    async validateConnection(refreshToken) {
       try {
-        const accessToken = await this.getAccessToken(credentials);
+        const accessToken = await this.getAccessToken(refreshToken);
 
-        // Test the credentials by making a simple API call
+        // Test API call to get seller info
         const response = await axios.get(`${this.baseURL}/sellers/v1/marketplaceParticipations`, {
           headers: {
             'Authorization': `Bearer ${accessToken}`,
@@ -56,51 +122,57 @@
           }
         });
 
+        // Extract seller ID from response
+        const sellerId = response.data.payload?.[0]?.sellerId;
+
+        if (!sellerId) {
+          throw new Error('Could not determine seller ID from Amazon response');
+        }
+
         return {
-          sellerId: credentials.sellerId,
+          sellerId,
           marketplaceId: this.marketplaceId,
           isValid: true
         };
       } catch (error) {
-        console.error('Error validating Amazon credentials:', error.response?.data || error.message);
-        throw new Error('Invalid Amazon SP-API credentials');
+        console.error('Error validating Amazon connection:', error.response?.data || error.message);
+        throw new Error('Invalid Amazon authorization or connection expired');
       }
     }
 
-    /**
-     * Get seller listings
-     */
-    async getListings(credentials, options = {}) {
+    // For now, simplified API calls (you can enhance with AWS signing later)
+    async getListings(refreshToken, sellerId, options = {}) {
       try {
-        const { limit = 20, nextToken, status = 'ACTIVE' } = options;
-        const accessToken = await this.getAccessToken(credentials);
+        const { limit = 20, nextToken } = options;
+        const accessToken = await this.getAccessToken(refreshToken);
 
-        const params = {
+        const params = new URLSearchParams({
           marketplaceIds: this.marketplaceId,
-          pageSize: limit
-        };
+          pageSize: limit.toString()
+        });
 
         if (nextToken) {
-          params.pageToken = nextToken;
+          params.append('pageToken', nextToken);
         }
 
-        const response = await axios.get(`${this.baseURL}/listings/2021-08-01/items/${credentials.sellerId}`, {
+        const url = `${this.baseURL}/listings/2021-08-01/items/${sellerId}?${params.toString()}`;
+
+        const response = await axios.get(url, {
           headers: {
             'Authorization': `Bearer ${accessToken}`,
             'x-amz-access-token': accessToken,
             'Content-Type': 'application/json'
-          },
-          params
+          }
         });
 
-        // Transform the response to match our expected format
+        // Transform response
         const listings = response.data.items?.map(item => ({
           sku: item.sku,
           asin: item.asin,
           fnsku: item.fnsku,
           productName: item.summaries?.[0]?.itemName || 'Unknown Product',
-          price: item.offers?.[0]?.listingPrice?.amount || 0,
-          quantity: item.offers?.[0]?.fulfillableQuantity || 0,
+          price: parseFloat(item.offers?.[0]?.listingPrice?.amount || 0),
+          quantity: parseInt(item.offers?.[0]?.fulfillableQuantity || 0),
           status: item.summaries?.[0]?.status || 'UNKNOWN',
           condition: item.summaries?.[0]?.conditionType || 'NEW',
           imageUrl: item.summaries?.[0]?.mainImage?.link,
@@ -121,22 +193,21 @@
       }
     }
 
-    /**
-     * Get a specific listing by SKU
-     */
-    async getListingBySku(credentials, sku) {
+    async getListingBySku(refreshToken, sellerId, sku) {
       try {
-        const accessToken = await this.getAccessToken(credentials);
+        const accessToken = await this.getAccessToken(refreshToken);
 
-        const response = await
-  axios.get(`${this.baseURL}/listings/2021-08-01/items/${credentials.sellerId}/${sku}`, {
+        const params = new URLSearchParams({
+          marketplaceIds: this.marketplaceId
+        });
+
+        const url = `${this.baseURL}/listings/2021-08-01/items/${sellerId}/${sku}?${params.toString()}`;
+
+        const response = await axios.get(url, {
           headers: {
             'Authorization': `Bearer ${accessToken}`,
             'x-amz-access-token': accessToken,
             'Content-Type': 'application/json'
-          },
-          params: {
-            marketplaceIds: this.marketplaceId
           }
         });
 
@@ -146,8 +217,8 @@
           asin: item.asin,
           fnsku: item.fnsku,
           productName: item.summaries?.[0]?.itemName || 'Unknown Product',
-          price: item.offers?.[0]?.listingPrice?.amount || 0,
-          quantity: item.offers?.[0]?.fulfillableQuantity || 0,
+          price: parseFloat(item.offers?.[0]?.listingPrice?.amount || 0),
+          quantity: parseInt(item.offers?.[0]?.fulfillableQuantity || 0),
           status: item.summaries?.[0]?.status || 'UNKNOWN',
           condition: item.summaries?.[0]?.conditionType || 'NEW',
           imageUrl: item.summaries?.[0]?.mainImage?.link,
