@@ -25,7 +25,8 @@
     "helmet": "^7.1.0",
     "joi": "^17.12.2",
     "morgan": "^1.10.0",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "aws-sdk": "^2.1480.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.0"
