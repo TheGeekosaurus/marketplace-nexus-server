@@ -56,9 +56,9 @@ class BigBoxProvider extends BaseProvider {
     let stockLevel = null;
     let inStock = false;
     
-    if (buyboxWinner.ship_to_home && product.ship_to_home_info) {
-      inStock = product.ship_to_home_info.in_stock || false;
-      stockLevel = product.ship_to_home_info.stock_level || null;
+    if (buyboxWinner.fulfillment && buyboxWinner.fulfillment.ship_to_home_info) {
+      inStock = buyboxWinner.fulfillment.ship_to_home_info.in_stock || false;
+      stockLevel = buyboxWinner.fulfillment.ship_to_home_info.stock_level || null;
     }
 
     // Build features array
