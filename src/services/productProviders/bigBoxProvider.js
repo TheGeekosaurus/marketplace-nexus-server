@@ -52,16 +52,13 @@ class BigBoxProvider extends BaseProvider {
       });
     }
 
-    // Calculate shipping cost
-    let shipping = 0;
-    if (buyboxWinner.ships_from === 'FREE') {
-      shipping = 0;
-    } else if (buyboxWinner.shipping && buyboxWinner.shipping !== 'FREE') {
-      // Try to parse shipping cost if it's a string like "$5.99"
-      const shippingMatch = buyboxWinner.shipping.match(/\$?([\d.]+)/);
-      shipping = shippingMatch ? parseFloat(shippingMatch[1]) : 5.99;
-    } else if (!buyboxWinner.free_shipping) {
-      shipping = 5.99; // Default shipping cost
+    // Extract stock information
+    let stockLevel = null;
+    let inStock = false;
+    
+    if (buyboxWinner.ship_to_home && product.ship_to_home_info) {
+      inStock = product.ship_to_home_info.in_stock || false;
+      stockLevel = product.ship_to_home_info.stock_level || null;
     }
 
     // Build features array
@@ -76,7 +73,7 @@ class BigBoxProvider extends BaseProvider {
       images: images,
       description: product.description || features.join(' ') || '',
       availability: buyboxWinner.availability?.raw || 'Unknown',
-      shipping: shipping,
+      shipping: 0, // Removed shipping cost as requested
       sku: product.model || product.item_id || '',
       brand: product.brand || '',
       category: product.category || '',
@@ -84,13 +81,17 @@ class BigBoxProvider extends BaseProvider {
       specifications: product.specifications || {},
       rating: product.rating || null,
       reviewCount: product.reviews_total || 0,
+      inStock: inStock,
+      stockLevel: stockLevel,
       sourceData: {
         itemId: product.item_id,
         model: product.model,
         upc: product.upc,
         storePickup: buyboxWinner.store_pickup || false,
         shipToHome: buyboxWinner.ship_to_home || false,
-        onlineOnly: product.online_only || false
+        onlineOnly: product.online_only || false,
+        stockLevel: stockLevel,
+        inStock: inStock
       }
     };
   }
