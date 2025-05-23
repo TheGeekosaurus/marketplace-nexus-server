@@ -4,6 +4,7 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const config = require('./config');
 const walmartRoutes = require('./routes/walmart.routes');
+const productRoutes = require('./routes/product.routes');
 const { errorHandler } = require('./middleware/error.middleware');
 
 // Initialize express app
@@ -88,6 +89,7 @@ app.get('/health', (req, res) => {
 // API routes
 app.use('/api/walmart', walmartRoutes);
 app.use('/api/amazon', require('./routes/amazon'));
+app.use('/api/products', productRoutes);
 
 // 404 handler
 app.use((req, res) => {

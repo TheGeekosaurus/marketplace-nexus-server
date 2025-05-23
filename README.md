@@ -1,20 +1,31 @@
-# Walmart API Server
+# Marketplace Nexus Server
 
-A Node.js server for integrating with the Walmart Marketplace API to retrieve seller listings and perform other marketplace operations.
+A Node.js server for integrating with multiple marketplace APIs (Walmart, Amazon, Home Depot, etc.) to retrieve seller listings and fetch product data.
 
 ## Features
 
-- Secure credential storage
-- Authentication with Walmart Marketplace API
-- Fetch all listings from a Walmart seller account
-- Fetch individual listing details
+### Marketplace Integrations
+- **Walmart Marketplace API**: Fetch seller listings and details
+- **Amazon SP-API**: Retrieve Amazon seller inventory
+- **TrajectData APIs**: Fetch real product data from multiple sources
+  - BigBox API for Home Depot products
+  - (Future) Rainforest API for Amazon products
+  - (Future) BlueCart API for Walmart products
+
+### Core Features
+- Secure credential management
+- Multi-marketplace authentication
+- Real-time product data fetching
+- Standardized response format across all marketplaces
 - Ready for deployment to Render
 
 ## Prerequisites
 
 - Node.js 18+
-- A Walmart Seller account with API access
-- Client ID and Client Secret from Walmart Seller Center
+- API credentials for the marketplaces you want to integrate:
+  - Walmart: Client ID and Client Secret from Walmart Seller Center
+  - Amazon: SP-API credentials (Client ID, Client Secret, Refresh Token)
+  - TrajectData: API keys for BigBox, Rainforest, or BlueCart APIs
 
 ## Setup
 
@@ -39,7 +50,14 @@ A Node.js server for integrating with the Walmart Marketplace API to retrieve se
    PORT=8000
    NODE_ENV=development
    CORS_ORIGIN=http://localhost:3000
+   
+   # TrajectData API Keys (for product data fetching)
+   BIGBOX_API_KEY=your_bigbox_api_key_here
+   # RAINFOREST_API_KEY=your_rainforest_api_key_here  # Future
+   # BLUECART_API_KEY=your_bluecart_api_key_here      # Future
    ```
+   
+   Note: Walmart and Amazon seller credentials are passed via request headers, not stored in environment variables.
 
 5. Start the development server:
    ```
@@ -54,12 +72,19 @@ A Node.js server for integrating with the Walmart Marketplace API to retrieve se
 
 ## API Routes
 
-### Authentication
+### Walmart Marketplace
 - `POST /api/walmart/auth`: Validate and store Walmart API credentials
-
-### Listings
-- `GET /api/walmart/listings`: Get all listings
+- `GET /api/walmart/listings`: Get all listings from your Walmart seller account
 - `GET /api/walmart/listing/:id`: Get a specific listing by ID
+
+### Amazon SP-API
+- `POST /api/amazon/auth`: Authenticate with Amazon SP-API
+- `GET /api/amazon/listings`: Get all listings from your Amazon seller account
+- `GET /api/amazon/listing/:sku`: Get a specific listing by SKU
+
+### Product Data Fetching (TrajectData)
+- `POST /api/products/fetch`: Fetch real product data from any supported marketplace
+- `GET /api/products/marketplaces`: Get list of supported marketplaces for product fetching
 
 ## Deployment to Render
 
