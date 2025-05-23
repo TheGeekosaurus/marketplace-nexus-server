@@ -106,7 +106,7 @@ class RainforestProvider extends BaseProvider {
       });
     }
     // Also check for variant images
-    if (product.images_flat) {
+    if (product.images_flat && Array.isArray(product.images_flat)) {
       product.images_flat.forEach(imgUrl => {
         if (imgUrl && !images.includes(imgUrl)) {
           images.push(imgUrl);
