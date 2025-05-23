@@ -35,9 +35,8 @@ class RainforestProvider extends BaseProvider {
         params.url = url;
       }
       
-      // Add optional parameters for comprehensive data
-      params.include_summarization_attributes = true;
-      params.include_a_plus_body = true;
+      // Note: We're not including optional parameters that cost extra credits
+      // like include_summarization_attributes or include_a_plus_body
       
       console.log('Rainforest API request params:', params);
       
@@ -50,18 +49,7 @@ class RainforestProvider extends BaseProvider {
         throw new Error('Invalid response from Rainforest API');
       }
 
-      // Optionally fetch stock estimation for better inventory data
-      let stockData = null;
-      if (asin && this.shouldFetchStockEstimation()) {
-        try {
-          stockData = await this.fetchStockEstimation(asin, domain || 'amazon.com');
-        } catch (stockError) {
-          console.warn('Stock estimation failed:', stockError.message);
-          // Continue without stock data
-        }
-      }
-
-      return this.transformResponse(response.data, stockData);
+      return this.transformResponse(response.data);
     } catch (error) {
       console.error('Rainforest API error:', error.message);
       if (error.response) {
@@ -72,25 +60,8 @@ class RainforestProvider extends BaseProvider {
     }
   }
 
-  async fetchStockEstimation(asin, amazonDomain) {
-    try {
-      const response = await axios.get(this.baseUrl, {
-        params: {
-          api_key: this.apiKey,
-          type: 'stock_estimation',
-          asin: asin,
-          amazon_domain: amazonDomain
-        },
-        timeout: 15000 // 15 second timeout for stock check
-      });
 
-      return response.data;
-    } catch (error) {
-      throw new Error(`Stock estimation failed: ${error.message}`);
-    }
-  }
-
-  transformResponse(data, stockData = null) {
+  transformResponse(data) {
     const product = data.product;
     
     // Extract main image and additional images
@@ -140,16 +111,13 @@ class RainforestProvider extends BaseProvider {
                   product.buybox_winner?.price?.value ||
                   0;
 
-    // Determine stock status
+    // Determine stock status from buybox availability
     let inStock = false;
     let stockLevel = null;
     
-    if (stockData && stockData.stock_estimation) {
-      inStock = stockData.stock_estimation.in_stock || false;
-      stockLevel = stockData.stock_estimation.stock_level || null;
-    } else if (buyboxWinner.availability) {
+    if (buyboxWinner.availability) {
       inStock = buyboxWinner.availability.type === 'in_stock';
-      // Try to extract stock level from availability message
+      // Try to extract stock level from availability message (e.g., "Only 3 left in stock")
       const stockMatch = buyboxWinner.availability.raw?.match(/Only (\d+) left in stock/);
       if (stockMatch) {
         stockLevel = parseInt(stockMatch[1]);
@@ -189,7 +157,6 @@ class RainforestProvider extends BaseProvider {
         variantAsins: product.variant_asins_flat || [],
         parentAsin: product.parent_asin || null,
         reviewSummary: product.top_positive_review?.body || null,
-        aPlus: product.a_plus_content?.has_a_plus_content || false,
         coupon: product.coupon_text || null,
         dimensions: product.dimensions || null,
         weight: product.weight || null,
@@ -222,10 +189,6 @@ class RainforestProvider extends BaseProvider {
     return domainMap[domainSuffix] || 'amazon.com';
   }
 
-  shouldFetchStockEstimation() {
-    // You can make this configurable via environment variable
-    return process.env.RAINFOREST_FETCH_STOCK === 'true';
-  }
 
   validateUrl(url) {
     return url.includes('amazon.') || url.includes('amzn.');
