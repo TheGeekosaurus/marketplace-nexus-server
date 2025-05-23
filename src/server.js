@@ -30,6 +30,11 @@ if (config.env === 'development') {
   );
 }
 
+// Add Lovable preview URLs (they use dynamic subdomains)
+allowedOrigins.push(
+  'https://id-preview--6e26d9b1-aed8-445b-a5d2-674b6bbae332.lovable.app'
+);
+
 // Log allowed origins for debugging
 console.log('Allowed CORS origins:', allowedOrigins);
 
@@ -45,6 +50,12 @@ app.use(cors({
     // Check if origin is allowed
     if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
       console.log(`Allowing request from origin: ${origin}`);
+      return callback(null, true);
+    }
+    
+    // Check for Lovable preview URLs pattern
+    if (origin.includes('.lovable.app')) {
+      console.log(`Allowing Lovable preview URL: ${origin}`);
       return callback(null, true);
     }
     
