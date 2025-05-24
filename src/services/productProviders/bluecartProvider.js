@@ -85,8 +85,8 @@ class BluecartProvider extends BaseProvider {
     
     // Extract images
     const images = [];
-    if (product.main_image) {
-      images.push(product.main_image);
+    if (product.main_image && product.main_image.link) {
+      images.push(product.main_image.link);
     }
     if (product.images && Array.isArray(product.images)) {
       product.images.forEach(img => {
