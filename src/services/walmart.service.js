@@ -209,18 +209,38 @@ class WalmartService {
   async searchCatalog(accessToken, searchParams) {
     try {
       const correlationId = uuidv4();
-      const { query, gtin, upc } = searchParams;
+      const { query, gtin, upc, itemId, sku, wpid, isbn, ean, productName } = searchParams;
       
       // Build request body - Walmart catalog search uses POST
       const requestBody = {};
-      if (query) requestBody.query = query;
-      if (gtin) requestBody.GTIN = gtin;
-      if (upc) requestBody.UPC = upc;
+      
+      // Query parameters (allowed fields according to docs)
+      const queryFields = {};
+      if (itemId) queryFields.itemId = itemId;
+      if (productName) queryFields.productName = productName;
+      if (sku) queryFields.sku = sku;
+      if (gtin) queryFields.gtin = gtin;
+      if (wpid) queryFields.wpid = wpid;
+      if (upc) queryFields.upc = upc;
+      if (isbn) queryFields.isbn = isbn;
+      if (ean) queryFields.ean = ean;
+      
+      // If we have query fields, add them to the request
+      if (Object.keys(queryFields).length > 0) {
+        requestBody.query = queryFields;
+      }
+      
+      // Handle legacy query parameter (string query)
+      if (query && typeof query === 'string') {
+        requestBody.query = { productName: query };
+      }
       
       // Ensure we have at least one search parameter
-      if (!query && !gtin && !upc) {
-        throw new Error('At least one search parameter (query, GTIN, or UPC) is required');
+      if (!requestBody.query) {
+        throw new Error('At least one query parameter (itemId, productName, sku, gtin, wpid, upc, isbn, ean) is required');
       }
+      
+      console.log('Walmart catalog search request:', JSON.stringify(requestBody, null, 2));
       
       const response = await axios({
         method: 'post',

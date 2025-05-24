@@ -53,40 +53,23 @@ class WalmartProvider extends BaseProvider {
         console.log('Item not in seller inventory, searching catalog...');
       }
 
-      // If not in inventory, we need to use a different approach
-      // Since we can't search by item ID directly in catalog search,
-      // we'll return a simplified response that allows the user to create an offer
-      // The user must have the UPC/GTIN from the Walmart product page
+      // If not in inventory, search the catalog using itemId
+      console.log(`Item not in seller inventory, searching catalog for itemId: ${itemId}`);
       
-      console.log('Item not in seller inventory. Returning basic product info for offer creation.');
-      
-      // Extract basic info from the URL and return minimal data
-      // The frontend will need to ensure the user provides UPC/GTIN
-      return {
-        title: 'Walmart Product',
-        price: 0,
-        images: [],
-        description: 'Product from Walmart.com',
-        availability: 'Available',
-        shipping: 0,
-        sku: itemId,
-        brand: '',
-        category: '',
-        features: [],
-        specifications: {},
-        rating: null,
-        reviewCount: 0,
-        inStock: true,
-        stockLevel: null,
-        sourceData: {
-          itemId: itemId,
-          wpid: null,
-          upc: null, // User will need to provide this
-          gtin: null,
-          requiresUPC: true,
-          message: 'Please enter the UPC/GTIN from the Walmart product page to create an offer.'
-        }
-      };
+      const searchResults = await walmartService.searchCatalog(tokenData.accessToken, {
+        itemId: itemId
+      });
+
+      if (!searchResults.items || searchResults.items.length === 0) {
+        throw new Error('Product not found in Walmart catalog');
+      }
+
+      // Find the exact match or use the first result
+      const catalogItem = searchResults.items.find(item => 
+        item.itemId === itemId || item.itemId === parseInt(itemId)
+      ) || searchResults.items[0];
+
+      return this.transformCatalogResponse(catalogItem, itemId);
     } catch (error) {
       console.error('Walmart provider error:', error.message);
       throw new Error(`Failed to fetch Walmart product: ${error.message}`);
@@ -137,28 +120,48 @@ class WalmartProvider extends BaseProvider {
    * @returns {object} - Standardized product data
    */
   transformCatalogResponse(catalogItem, itemId) {
+    // Extract images array
+    const images = [];
+    if (catalogItem.imageUrl) {
+      images.push(catalogItem.imageUrl);
+    }
+    if (catalogItem.images?.mainImage) {
+      images.push(catalogItem.images.mainImage);
+    }
+    if (catalogItem.images?.additionalImages) {
+      images.push(...catalogItem.images.additionalImages);
+    }
+    
+    // Extract price - catalog search returns price object
+    const price = catalogItem.priceInfo?.currentPrice?.amount || 
+                  catalogItem.price?.amount || 
+                  catalogItem.salePrice || 
+                  catalogItem.price || 
+                  0;
+    
     return {
-      title: catalogItem.name || catalogItem.title || 'Unknown Product',
-      price: catalogItem.salePrice || catalogItem.price || 0,
-      images: catalogItem.images ? [catalogItem.images.mainImage] : [],
-      description: catalogItem.description || catalogItem.shortDescription || '',
-      availability: 'Available',
+      title: catalogItem.productName || catalogItem.name || catalogItem.title || 'Unknown Product',
+      price: price,
+      images: images,
+      description: catalogItem.shortDescription || catalogItem.description || '',
+      availability: catalogItem.availabilityStatus || 'Available',
       shipping: 0,
-      sku: catalogItem.itemId || itemId,
+      sku: catalogItem.sku || catalogItem.itemId || itemId,
       brand: catalogItem.brand || '',
-      category: catalogItem.category || '',
+      category: catalogItem.productCategory || catalogItem.category || '',
       features: catalogItem.features || [],
       specifications: {},
       rating: catalogItem.customerRating || null,
-      reviewCount: catalogItem.numReviews || 0,
-      inStock: true, // Catalog items are generally available
+      reviewCount: catalogItem.numberOfReviews || catalogItem.numReviews || 0,
+      inStock: catalogItem.availabilityStatus === 'IN_STOCK' || true,
       stockLevel: null,
       sourceData: {
         itemId: catalogItem.itemId || itemId,
         wpid: catalogItem.wpid || null,
-        upc: catalogItem.upc || null,
-        gtin: catalogItem.gtin || null,
-        model: catalogItem.modelNumber || null
+        upc: catalogItem.upc || catalogItem.productId || null,
+        gtin: catalogItem.gtin || catalogItem.productId || null,
+        model: catalogItem.modelNumber || null,
+        publishedStatus: catalogItem.publishedStatus || null
       }
     };
   }
