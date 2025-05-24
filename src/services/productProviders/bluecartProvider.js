@@ -52,18 +52,18 @@ class BluecartProvider extends BaseProvider {
         timeout: 30000 // 30 second timeout
       });
 
-      if (!response.data || !response.data.results || response.data.results.length === 0) {
-        throw new Error('No product data found in BlueCart response');
+      if (!response.data || !response.data.product) {
+        throw new Error('Invalid response from BlueCart API');
       }
 
       return this.transformResponse(response.data);
     } catch (error) {
-      console.error('BlueCart provider error:', error.message);
+      console.error('BlueCart API error:', error.message);
       if (error.response) {
         console.error('Response status:', error.response.status);
-        console.error('Response data:', JSON.stringify(error.response.data, null, 2));
+        console.error('Response data:', error.response.data);
       }
-      throw new Error(`Failed to fetch Walmart product via BlueCart: ${error.message}`);
+      throw new Error(`Failed to fetch Walmart product: ${error.message}`);
     }
   }
 
@@ -73,7 +73,7 @@ class BluecartProvider extends BaseProvider {
    * @returns {object} - Standardized product data
    */
   transformResponse(data) {
-    const product = data.results[0]; // BlueCart returns results array
+    const product = data.product; // BlueCart returns product object like other providers
     
     // Extract price from buybox_winner
     const buyboxWinner = product.buybox_winner || {};
