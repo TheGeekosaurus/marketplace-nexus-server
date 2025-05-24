@@ -1,9 +1,14 @@
 const Joi = require('joi');
 const productProviderFactory = require('../services/productProviderFactory');
+const WalmartProvider = require('../services/productProviders/walmartProvider');
 
 const productSchema = Joi.object({
   url: Joi.string().uri().required(),
-  marketplace: Joi.string().optional()
+  marketplace: Joi.string().optional(),
+  credentials: Joi.object({
+    clientId: Joi.string(),
+    clientSecret: Joi.string()
+  }).optional()
 });
 
 const fetchProduct = async (req, res, next) => {
@@ -17,7 +22,26 @@ const fetchProduct = async (req, res, next) => {
       });
     }
 
-    const { url, marketplace } = value;
+    const { url, marketplace, credentials } = value;
+
+    // Special handling for Walmart - requires credentials
+    if (url.includes('walmart.com')) {
+      if (!credentials || !credentials.clientId || !credentials.clientSecret) {
+        return res.status(400).json({
+          success: false,
+          message: 'Walmart API credentials are required to fetch Walmart products'
+        });
+      }
+      
+      const walmartProvider = new WalmartProvider();
+      const productData = await walmartProvider.fetchProduct(url, credentials);
+      
+      return res.json({
+        success: true,
+        marketplace: 'Walmart',
+        data: productData
+      });
+    }
 
     // Get provider based on marketplace or auto-detect from URL
     let provider;

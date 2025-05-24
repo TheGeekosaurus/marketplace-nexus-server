@@ -199,6 +199,152 @@ class WalmartService {
       throw new Error(`Failed to fetch Walmart listing ${itemId}: ${error.message}`);
     }
   }
+
+  /**
+   * Search Walmart catalog for items
+   * @param {string} accessToken - Walmart API access token
+   * @param {object} searchParams - Search parameters
+   * @returns {Promise<object>} - Search results
+   */
+  async searchCatalog(accessToken, searchParams) {
+    try {
+      const correlationId = uuidv4();
+      const { query, gtin, upc } = searchParams;
+      
+      // Build query parameters
+      const params = {};
+      if (query) params.query = query;
+      if (gtin) params.gtin = gtin;
+      if (upc) params.upc = upc;
+      
+      const response = await axios({
+        method: 'get',
+        url: `${this.apiUrl}/${this.apiVersion}/items/catalog/search`,
+        headers: {
+          'WM_SEC.ACCESS_TOKEN': accessToken,
+          'WM_SVC.NAME': 'Walmart Marketplace',
+          'WM_QOS.CORRELATION_ID': correlationId,
+          'Accept': 'application/json'
+        },
+        params,
+        timeout: config.walmart.requestTimeout
+      });
+
+      return response.data;
+    } catch (error) {
+      console.error('Error searching Walmart catalog:', error.message);
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', JSON.stringify(error.response.data, null, 2));
+      }
+      throw new Error(`Failed to search Walmart catalog: ${error.message}`);
+    }
+  }
+
+  /**
+   * Create an offer for an existing Walmart item
+   * @param {string} accessToken - Walmart API access token
+   * @param {object} offerData - Offer data including SKU, price, condition, etc
+   * @returns {Promise<object>} - Feed response
+   */
+  async createOffer(accessToken, offerData) {
+    try {
+      const correlationId = uuidv4();
+      
+      // Build the feed payload for MP_ITEM_MATCH
+      const feedPayload = {
+        MPItemFeedHeader: {
+          processMode: 'REPLACE',
+          subset: 'EXTERNAL',
+          locale: 'en',
+          sellingChannel: 'marketplace',
+          version: '1.0'
+        },
+        MPItem: [{
+          Item: {
+            sku: offerData.sku,
+            condition: offerData.condition || 'New',
+            price: {
+              currency: 'USD',
+              amount: offerData.price
+            },
+            shippingWeight: {
+              unit: 'LB',
+              value: offerData.shippingWeight || 1
+            },
+            productIdentifiers: {
+              productIdType: offerData.productIdType || 'UPC',
+              productId: offerData.productId
+            }
+          }
+        }]
+      };
+
+      // Add image URL if provided
+      if (offerData.mainImageUrl) {
+        feedPayload.MPItem[0].Item.mainImageUrl = offerData.mainImageUrl;
+      }
+
+      const response = await axios({
+        method: 'post',
+        url: `${this.apiUrl}/${this.apiVersion}/feeds`,
+        headers: {
+          'WM_SEC.ACCESS_TOKEN': accessToken,
+          'WM_SVC.NAME': 'Walmart Marketplace',
+          'WM_QOS.CORRELATION_ID': correlationId,
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        params: {
+          feedType: 'MP_ITEM_MATCH'
+        },
+        data: feedPayload,
+        timeout: config.walmart.requestTimeout
+      });
+
+      return response.data;
+    } catch (error) {
+      console.error('Error creating Walmart offer:', error.message);
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', JSON.stringify(error.response.data, null, 2));
+      }
+      throw new Error(`Failed to create Walmart offer: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get feed status to check offer creation progress
+   * @param {string} accessToken - Walmart API access token
+   * @param {string} feedId - Feed ID from createOffer response
+   * @returns {Promise<object>} - Feed status
+   */
+  async getFeedStatus(accessToken, feedId) {
+    try {
+      const correlationId = uuidv4();
+      
+      const response = await axios({
+        method: 'get',
+        url: `${this.apiUrl}/${this.apiVersion}/feeds/${feedId}`,
+        headers: {
+          'WM_SEC.ACCESS_TOKEN': accessToken,
+          'WM_SVC.NAME': 'Walmart Marketplace',
+          'WM_QOS.CORRELATION_ID': correlationId,
+          'Accept': 'application/json'
+        },
+        timeout: config.walmart.requestTimeout
+      });
+
+      return response.data;
+    } catch (error) {
+      console.error(`Error getting feed status ${feedId}:`, error.message);
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', JSON.stringify(error.response.data, null, 2));
+      }
+      throw new Error(`Failed to get feed status: ${error.message}`);
+    }
+  }
 }
 
 module.exports = new WalmartService();
