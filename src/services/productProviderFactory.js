@@ -1,5 +1,6 @@
 const BigBoxProvider = require('./productProviders/bigBoxProvider');
 const RainforestProvider = require('./productProviders/rainforestProvider');
+const BluecartProvider = require('./productProviders/bluecartProvider');
 
 class ProductProviderFactory {
   constructor() {
@@ -18,10 +19,10 @@ class ProductProviderFactory {
       this.providers.set('amazon', new RainforestProvider(process.env.RAINFOREST_API_KEY));
     }
 
-    // Future providers will be added here:
-    // if (process.env.BLUECART_API_KEY) {
-    //   this.providers.set('walmart', new BlueCartProvider(process.env.BLUECART_API_KEY));
-    // }
+    // Initialize BlueCart provider for Walmart
+    if (process.env.BLUECART_API_KEY) {
+      this.providers.set('walmart', new BluecartProvider(process.env.BLUECART_API_KEY));
+    }
   }
 
   /**
