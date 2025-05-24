@@ -211,22 +211,28 @@ class WalmartService {
       const correlationId = uuidv4();
       const { query, gtin, upc } = searchParams;
       
-      // Build query parameters
-      const params = {};
-      if (query) params.query = query;
-      if (gtin) params.gtin = gtin;
-      if (upc) params.upc = upc;
+      // Build request body - Walmart catalog search uses POST
+      const requestBody = {};
+      if (query) requestBody.query = query;
+      if (gtin) requestBody.GTIN = gtin;
+      if (upc) requestBody.UPC = upc;
+      
+      // Ensure we have at least one search parameter
+      if (!query && !gtin && !upc) {
+        throw new Error('At least one search parameter (query, GTIN, or UPC) is required');
+      }
       
       const response = await axios({
-        method: 'get',
+        method: 'post',
         url: `${this.apiUrl}/${this.apiVersion}/items/catalog/search`,
         headers: {
           'WM_SEC.ACCESS_TOKEN': accessToken,
           'WM_SVC.NAME': 'Walmart Marketplace',
           'WM_QOS.CORRELATION_ID': correlationId,
-          'Accept': 'application/json'
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
         },
-        params,
+        data: requestBody,
         timeout: config.walmart.requestTimeout
       });
 

@@ -53,21 +53,40 @@ class WalmartProvider extends BaseProvider {
         console.log('Item not in seller inventory, searching catalog...');
       }
 
-      // If not in inventory, search the catalog
-      const searchResults = await walmartService.searchCatalog(tokenData.accessToken, {
-        query: itemId
-      });
-
-      if (!searchResults.items || searchResults.items.length === 0) {
-        throw new Error('Product not found in Walmart catalog');
-      }
-
-      // Find the exact match
-      const catalogItem = searchResults.items.find(item => 
-        item.itemId === itemId || item.wpid === itemId
-      ) || searchResults.items[0];
-
-      return this.transformCatalogResponse(catalogItem, itemId);
+      // If not in inventory, we need to use a different approach
+      // Since we can't search by item ID directly in catalog search,
+      // we'll return a simplified response that allows the user to create an offer
+      // The user must have the UPC/GTIN from the Walmart product page
+      
+      console.log('Item not in seller inventory. Returning basic product info for offer creation.');
+      
+      // Extract basic info from the URL and return minimal data
+      // The frontend will need to ensure the user provides UPC/GTIN
+      return {
+        title: 'Walmart Product',
+        price: 0,
+        images: [],
+        description: 'Product from Walmart.com',
+        availability: 'Available',
+        shipping: 0,
+        sku: itemId,
+        brand: '',
+        category: '',
+        features: [],
+        specifications: {},
+        rating: null,
+        reviewCount: 0,
+        inStock: true,
+        stockLevel: null,
+        sourceData: {
+          itemId: itemId,
+          wpid: null,
+          upc: null, // User will need to provide this
+          gtin: null,
+          requiresUPC: true,
+          message: 'Please enter the UPC/GTIN from the Walmart product page to create an offer.'
+        }
+      };
     } catch (error) {
       console.error('Walmart provider error:', error.message);
       throw new Error(`Failed to fetch Walmart product: ${error.message}`);
