@@ -56,7 +56,7 @@ class BluecartProvider extends BaseProvider {
         throw new Error('Invalid response from BlueCart API');
       }
 
-      return this.transformResponse(response.data);
+      return this.transformResponse(response.data, defaultStockLevels);
     } catch (error) {
       console.error('BlueCart API error:', error.message);
       if (error.response) {
@@ -72,7 +72,7 @@ class BluecartProvider extends BaseProvider {
    * @param {object} data - BlueCart API response
    * @returns {object} - Standardized product data
    */
-  transformResponse(data) {
+  transformResponse(data, defaultStockLevels) {
     const product = data.product; // BlueCart returns product object like other providers
     
     // Extract price from buybox_winner

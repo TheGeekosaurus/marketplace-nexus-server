@@ -49,7 +49,7 @@ class RainforestProvider extends BaseProvider {
         throw new Error('Invalid response from Rainforest API');
       }
 
-      return this.transformResponse(response.data);
+      return this.transformResponse(response.data, defaultStockLevels);
     } catch (error) {
       console.error('Rainforest API error:', error.message);
       if (error.response) {
@@ -61,7 +61,7 @@ class RainforestProvider extends BaseProvider {
   }
 
 
-  transformResponse(data) {
+  transformResponse(data, defaultStockLevels) {
     const product = data.product;
     
     // Extract main image and additional images
