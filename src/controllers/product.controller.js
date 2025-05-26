@@ -3,7 +3,11 @@ const productProviderFactory = require('../services/productProviderFactory');
 
 const productSchema = Joi.object({
   url: Joi.string().uri().required(),
-  marketplace: Joi.string().optional()
+  marketplace: Joi.string().optional(),
+  defaultStockLevels: Joi.object({
+    amazon: Joi.number().min(1).optional(),
+    walmart: Joi.number().min(1).optional()
+  }).optional()
 });
 
 const fetchProduct = async (req, res, next) => {
@@ -17,7 +21,7 @@ const fetchProduct = async (req, res, next) => {
       });
     }
 
-    const { url, marketplace } = value;
+    const { url, marketplace, defaultStockLevels } = value;
 
     // Get provider based on marketplace or auto-detect from URL
     let provider;
@@ -50,7 +54,7 @@ const fetchProduct = async (req, res, next) => {
 
     // Fetch product data
     console.log(`Fetching product from ${provider.getMarketplaceName()}...`);
-    const productData = await provider.fetchProduct(url);
+    const productData = await provider.fetchProduct(url, defaultStockLevels);
 
     // Return success response
     res.json({

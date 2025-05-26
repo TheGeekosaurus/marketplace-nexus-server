@@ -8,7 +8,7 @@ class BaseProvider {
    * @param {string} url - The product URL
    * @returns {Promise<Object>} Standardized product data
    */
-  async fetchProduct(url) {
+  async fetchProduct(url, defaultStockLevels) {
     throw new Error('fetchProduct method must be implemented by subclass');
   }
 

@@ -7,7 +7,7 @@ class BigBoxProvider extends BaseProvider {
     this.baseUrl = 'https://api.bigboxapi.com/request';
   }
 
-  async fetchProduct(url) {
+  async fetchProduct(url, defaultStockLevels) {
     try {
       console.log(`Fetching Home Depot product from URL: ${url}`);
       

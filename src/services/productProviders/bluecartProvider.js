@@ -25,7 +25,7 @@ class BluecartProvider extends BaseProvider {
    * @param {string} url - Walmart product URL
    * @returns {Promise<object>} - Standardized product data
    */
-  async fetchProduct(url) {
+  async fetchProduct(url, defaultStockLevels) {
     try {
       console.log(`Fetching Walmart product via BlueCart: ${url}`);
       
@@ -82,6 +82,7 @@ class BluecartProvider extends BaseProvider {
     // Extract availability
     const availability = buyboxWinner.availability || {};
     const inStock = availability.in_stock !== undefined ? availability.in_stock : true;
+    const defaultStock = defaultStockLevels?.walmart || 10;
     
     // Extract images
     const images = [];
@@ -111,7 +112,7 @@ class BluecartProvider extends BaseProvider {
       rating: product.rating || null,
       reviewCount: product.ratings_total || 0,
       inStock: inStock,
-      stockLevel: null, // BlueCart doesn't provide exact stock numbers
+      stockLevel: inStock ? defaultStock : 0, // Use default stock level when in stock
       sourceData: {
         itemId: product.item_id,
         upc: product.upc || null, // CRITICAL: This is what we need!

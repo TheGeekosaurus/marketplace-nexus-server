@@ -7,7 +7,7 @@ class RainforestProvider extends BaseProvider {
     this.baseUrl = 'https://api.rainforestapi.com/request';
   }
 
-  async fetchProduct(url) {
+  async fetchProduct(url, defaultStockLevels) {
     try {
       console.log(`Fetching Amazon product from URL: ${url}`);
       
@@ -114,6 +114,7 @@ class RainforestProvider extends BaseProvider {
     // Determine stock status from buybox availability
     let inStock = false;
     let stockLevel = null;
+    const defaultStock = defaultStockLevels?.amazon || 10;
     
     if (buyboxWinner.availability) {
       inStock = buyboxWinner.availability.type === 'in_stock';
@@ -121,12 +122,17 @@ class RainforestProvider extends BaseProvider {
       const stockMatch = buyboxWinner.availability.raw?.match(/Only (\d+) left in stock/);
       if (stockMatch) {
         stockLevel = parseInt(stockMatch[1]);
+      } else if (inStock) {
+        // Use default stock level when in stock but no specific quantity
+        stockLevel = defaultStock;
       }
     }
 
-    // Extract shipping cost (0 for Prime eligible items)
-    const isPrime = buyboxWinner.is_prime || buyboxWinner.fulfillment?.is_prime || false;
-    const shipping = isPrime ? 0 : (buyboxWinner.shipping?.value || 5.99);
+    // Default shipping now managed at user account level
+    const shipping = 0;
+    
+    // Determine Prime status
+    const isPrime = buyboxWinner.fulfillment?.is_prime || false;
 
     return {
       title: product.title || 'Unknown Product',
