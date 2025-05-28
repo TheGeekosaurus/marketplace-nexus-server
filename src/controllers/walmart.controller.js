@@ -339,11 +339,67 @@ const getInventory = asyncHandler(async (req, res) => {
   }
 });
 
+/**
+ * Update price for a specific SKU
+ * @route POST /api/walmart/update-price
+ * @access Private
+ */
+const updatePrice = asyncHandler(async (req, res) => {
+  // Validate request body
+  const schema = Joi.object({
+    credentials: Joi.object({
+      clientId: Joi.string().required(),
+      clientSecret: Joi.string().required()
+    }).required(),
+    sku: Joi.string().required(),
+    price: Joi.number().positive().required()
+  });
+
+  const { error, value } = schema.validate(req.body);
+  if (error) {
+    return res.status(400).json({ 
+      success: false,
+      message: error.details[0].message 
+    });
+  }
+
+  const { credentials, sku, price } = value;
+
+  try {
+    // Get access token
+    const tokenData = await walmartService.getAccessToken(
+      credentials.clientId, 
+      credentials.clientSecret
+    );
+    
+    // Update the price
+    const priceResponse = await walmartService.updatePrice(
+      tokenData.accessToken, 
+      sku,
+      price
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: 'Price updated successfully',
+      data: priceResponse
+    });
+  } catch (error) {
+    console.error('Error updating Walmart price:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to update price',
+      error: error.response ? error.response.data : null
+    });
+  }
+});
+
 module.exports = {
   authenticateWalmart,
   getListings,
   getListingById,
   createOffer,
   getFeedStatus,
-  getInventory
+  getInventory,
+  updatePrice
 };

@@ -407,6 +407,58 @@ class WalmartService {
       throw new Error(`Failed to get inventory for SKU ${sku}: ${error.message}`);
     }
   }
+
+  /**
+   * Update price for a specific SKU
+   * @param {string} accessToken - Walmart API access token
+   * @param {string} sku - SKU to update price for
+   * @param {number} price - New price
+   * @returns {Promise<object>} - Update response
+   */
+  async updatePrice(accessToken, sku, price) {
+    try {
+      const correlationId = uuidv4();
+      
+      const payload = {
+        sku: sku,
+        pricing: [
+          {
+            currentPriceType: "BASE",
+            currentPrice: {
+              currency: "USD",
+              amount: price
+            }
+          }
+        ]
+      };
+      
+      console.log(`Updating price for SKU ${sku} to $${price}`);
+      
+      const response = await axios({
+        method: 'put',
+        url: `${this.apiUrl}/${this.apiVersion}/price`,
+        headers: {
+          'WM_SEC.ACCESS_TOKEN': accessToken,
+          'WM_SVC.NAME': 'Walmart Marketplace',
+          'WM_QOS.CORRELATION_ID': correlationId,
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        data: payload,
+        timeout: config.walmart.requestTimeout
+      });
+
+      console.log(`Price update response for SKU ${sku}:`, response.data);
+      return response.data;
+    } catch (error) {
+      console.error(`Error updating price for SKU ${sku}:`, error.message);
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', JSON.stringify(error.response.data, null, 2));
+      }
+      throw new Error(`Failed to update price for SKU ${sku}: ${error.message}`);
+    }
+  }
 }
 
 module.exports = new WalmartService();
