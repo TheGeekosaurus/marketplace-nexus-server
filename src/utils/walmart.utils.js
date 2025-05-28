@@ -79,7 +79,7 @@ function simplifyWalmartItem(item) {
   if (!item) return null;
   
   return {
-    id: item.itemId || item.sku,
+    id: item.wpid || item.sku,  // Use wpid as primary ID since itemId is not in response
     sku: item.sku,
     wpid: item.wpid,
     upc: item.upc,
@@ -88,8 +88,9 @@ function simplifyWalmartItem(item) {
     price: parseFloat(item.price?.amount) || 0,
     publishedStatus: item.publishedStatus,
     lifecycleStatus: item.lifecycleStatus,
-    inventoryCount: item.inventory?.quantity || 0,
-    imageUrl: item.imageUrl,
+    inventoryCount: 0,  // Will be updated by background inventory sync
+    availability: item.availability,  // Keep original availability status
+    imageUrl: null,  // Not provided in getAllItems response
     createdDate: item.createdDate,
     lastModifiedDate: item.lastModifiedDate
   };

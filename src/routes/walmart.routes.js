@@ -5,7 +5,8 @@ const {
   getListings, 
   getListingById,
   createOffer,
-  getFeedStatus
+  getFeedStatus,
+  getInventory
 } = require('../controllers/walmart.controller');
 
 // Authentication routes
@@ -18,5 +19,8 @@ router.get('/listing/:id', getListingById);
 // Offer creation routes
 router.post('/create-offer', createOffer);
 router.get('/feed/:feedId', getFeedStatus);
+
+// Inventory routes
+router.get('/inventory/:sku', getInventory);
 
 module.exports = router;

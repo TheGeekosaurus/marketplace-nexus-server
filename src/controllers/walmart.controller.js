@@ -284,10 +284,66 @@ const getFeedStatus = asyncHandler(async (req, res) => {
   }
 });
 
+/**
+ * Get inventory for a specific SKU
+ * @route GET /api/walmart/inventory/:sku
+ * @access Private
+ */
+const getInventory = asyncHandler(async (req, res) => {
+  const { sku } = req.params;
+
+  if (!sku) {
+    return res.status(400).json({ message: 'SKU is required' });
+  }
+
+  // Extract credentials from request
+  const schema = Joi.object({
+    clientId: Joi.string().required(),
+    clientSecret: Joi.string().required()
+  });
+
+  const { error, value } = schema.validate({
+    clientId: req.headers.clientid,
+    clientSecret: req.headers.clientsecret
+  });
+
+  if (error) {
+    return res.status(400).json({ message: error.details[0].message });
+  }
+
+  const { clientId, clientSecret } = value;
+
+  try {
+    // Get access token
+    const tokenData = await walmartService.getAccessToken(clientId, clientSecret);
+    
+    // Get inventory
+    const inventory = await walmartService.getInventory(tokenData.accessToken, sku);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        sku: inventory.sku,
+        quantity: inventory.quantity?.amount || 0,
+        unit: inventory.quantity?.unit || 'EACH',
+        inventoryAvailableDate: inventory.inventoryAvailableDate
+      }
+    });
+  } catch (error) {
+    console.error(`Error getting inventory for SKU ${sku}:`, error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || `Failed to get inventory for SKU ${sku}`,
+      error: error.response ? error.response.data : null
+    });
+  }
+});
+
 module.exports = {
   authenticateWalmart,
   getListings,
   getListingById,
   createOffer,
-  getFeedStatus
+  getFeedStatus,
+  getInventory
 };

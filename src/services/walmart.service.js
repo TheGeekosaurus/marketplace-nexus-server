@@ -371,6 +371,42 @@ class WalmartService {
       throw new Error(`Failed to get feed status: ${error.message}`);
     }
   }
+
+  /**
+   * Get inventory for a specific SKU
+   * @param {string} accessToken - Walmart API access token
+   * @param {string} sku - SKU to get inventory for
+   * @returns {Promise<object>} - Inventory data
+   */
+  async getInventory(accessToken, sku) {
+    try {
+      const correlationId = uuidv4();
+      
+      const response = await axios({
+        method: 'get',
+        url: `${this.apiUrl}/${this.apiVersion}/inventory`,
+        headers: {
+          'WM_SEC.ACCESS_TOKEN': accessToken,
+          'WM_SVC.NAME': 'Walmart Marketplace',
+          'WM_QOS.CORRELATION_ID': correlationId,
+          'Accept': 'application/json'
+        },
+        params: {
+          sku: sku
+        },
+        timeout: config.walmart.requestTimeout
+      });
+
+      return response.data;
+    } catch (error) {
+      console.error(`Error getting inventory for SKU ${sku}:`, error.message);
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', JSON.stringify(error.response.data, null, 2));
+      }
+      throw new Error(`Failed to get inventory for SKU ${sku}: ${error.message}`);
+    }
+  }
 }
 
 module.exports = new WalmartService();
