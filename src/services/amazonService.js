@@ -41,7 +41,8 @@ class AmazonService {
       scope: 'sellingpartnerapi::migration',
       response_type: 'code',
       redirect_uri: redirectUri,
-      state: state
+      state: state,
+      version: 'beta'  // Required for draft applications
     });
 
     const authUrl = `https://sellercentral.amazon.com/apps/authorize/consent?${params.toString()}`;
