@@ -3,11 +3,11 @@ const crypto = require('crypto');
 
 // Amazon SP-API endpoints
 const ENDPOINTS = {
-  'us-east-1': 'https://sellingpartnerapi-na.amazon.com'
+  'us-east-1': 'https://sandbox.sellingpartnerapi-na.amazon.com'
 };
 
-// US Marketplace ID (Production)
-const US_MARKETPLACE_ID = 'ATVPDKIKX0DER';
+// US Marketplace ID (Sandbox)
+const US_MARKETPLACE_ID = 'A2Q3Y263D00KWC';
 
 // LWA (Login with Amazon) endpoint
 const LWA_ENDPOINT = 'https://api.amazon.com/auth/o2/token';
