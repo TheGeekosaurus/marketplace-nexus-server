@@ -39,6 +39,7 @@ class AmazonService {
     // Amazon SP-API uses simplified OAuth parameters
     const params = new URLSearchParams({
       application_id: this.appId,  // Changed from client_id to application_id
+      version: 'beta',             // Required for draft applications
       state: state,
       redirect_uri: redirectUri
     });
