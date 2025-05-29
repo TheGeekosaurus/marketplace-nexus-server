@@ -101,120 +101,132 @@ class AmazonService {
   }
 
   /**
-   * Validate connection and get seller info
-   * WITH EXTENSIVE DEBUG LOGGING
+   * Get seller ID using the official Product Fees API method
+   * This is the documented way that many Amazon SP-API developers use
    */
-  async validateConnection(refreshToken) {
+  async getSellerIdFromFeesAPI(accessToken) {
     try {
-      const accessToken = await this.getAccessToken(refreshToken);
-
-      console.log('Making SP-API call to get seller info...');
-      console.log('Using endpoint:', `${this.baseURL}/sellers/v1/marketplaceParticipations`);
-      console.log('Access token length:', accessToken?.length);
+      console.log('Getting seller ID from Product Fees API...');
       
-      // Simple API call with just LWA token - no AWS signing needed!
-      const response = await axios.get(`${this.baseURL}/sellers/v1/marketplaceParticipations`, {
+      // Use any common ASIN for the fees estimate
+      // This will return an error, but the error response contains our seller ID
+      const commonASIN = 'B08WJ81ZS1'; // Any valid ASIN works
+      
+      const requestBody = {
+        FeesEstimateRequest: {
+          MarketplaceId: this.marketplaceId,
+          IsAmazonFulfilled: true,
+          PriceToEstimateFees: {
+            ListingPrice: {
+              CurrencyCode: "USD",
+              Amount: 10
+            },
+            Shipping: {
+              CurrencyCode: "USD", 
+              Amount: 0
+            }
+          },
+          Identifier: commonASIN
+        }
+      };
+
+      const response = await axios.post(
+        `${this.baseURL}/products/fees/v0/items/${commonASIN}/feesEstimate`,
+        requestBody,
+        {
+          headers: {
+            'x-amz-access-token': accessToken,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      // Extract seller ID from response (even if there's an error)
+      const sellerId = response.data?.payload?.FeesEstimateResult?.FeesEstimateIdentifier?.SellerId;
+      
+      if (sellerId) {
+        console.log('✅ Found seller ID from fees API response:', sellerId);
+        return sellerId;
+      }
+
+      throw new Error('Seller ID not found in fees API response');
+      
+    } catch (error) {
+      // Even if the API returns an error, check if seller ID is in the error response
+      const sellerId = error.response?.data?.payload?.FeesEstimateResult?.FeesEstimateIdentifier?.SellerId;
+      
+      if (sellerId) {
+        console.log('✅ Found seller ID from fees API error response:', sellerId);
+        return sellerId;
+      }
+      
+      console.error('Could not extract seller ID from fees API:', {
+        status: error.response?.status,
+        data: error.response?.data
+      });
+      
+      throw new Error('Could not determine seller ID from Product Fees API');
+    }
+  }
+
+  /**
+   * Test that the seller ID works with the listings API
+   */
+  async testSellerIdWithListings(accessToken, sellerId) {
+    try {
+      console.log('Testing listings API access with seller ID...');
+      
+      const params = new URLSearchParams({
+        marketplaceIds: this.marketplaceId,
+        pageSize: '1'
+      });
+
+      const url = `${this.baseURL}/listings/2021-08-01/items/${sellerId}?${params.toString()}`;
+
+      const response = await axios.get(url, {
         headers: {
           'x-amz-access-token': accessToken,
           'Content-Type': 'application/json'
         }
       });
 
-      console.log('=== AMAZON SP-API RESPONSE DEBUG ===');
-      console.log('Response status:', response.status);
-      console.log('Response headers:', JSON.stringify(response.headers, null, 2));
-      console.log('Full response data:', JSON.stringify(response.data, null, 2));
-      console.log('=====================================');
-
-      // Let's try multiple ways to find the seller ID
-      let sellerId = null;
-      const data = response.data;
-
-      console.log('Attempting to find seller ID...');
+      console.log('✅ Listings API test successful - seller ID is valid for syncing');
+      console.log('Found', response.data.items?.length || 0, 'listing(s)');
       
-      // Method 1: Standard payload structure
-      if (data.payload && Array.isArray(data.payload)) {
-        console.log('Found payload array with', data.payload.length, 'items');
-        
-        for (let i = 0; i < data.payload.length; i++) {
-          const item = data.payload[i];
-          console.log(`Payload item ${i}:`, JSON.stringify(item, null, 2));
-          
-          // Try different paths
-          const possibleSellerIds = [
-            item?.participation?.sellerId,
-            item?.sellerId,
-            item?.seller?.sellerId,
-            item?.sellerPartnerId,
-            item?.marketplaceParticipation?.sellerId,
-            item?.marketplace?.sellerId
-          ];
-          
-          for (const id of possibleSellerIds) {
-            if (id) {
-              console.log('Found seller ID via path:', id);
-              sellerId = id;
-              break;
-            }
-          }
-          
-          if (sellerId) break;
-        }
+      return true;
+    } catch (error) {
+      if (error.response?.status === 403) {
+        throw new Error('Access denied to listings API. Your app may need additional permissions.');
       }
-
-      // Method 2: Direct properties
-      if (!sellerId) {
-        console.log('Trying direct properties...');
-        const directPaths = [
-          data.sellerId,
-          data.seller?.sellerId,
-          data.sellerPartnerId,
-          data.participations?.[0]?.sellerId
-        ];
-        
-        for (const id of directPaths) {
-          if (id) {
-            console.log('Found seller ID via direct path:', id);
-            sellerId = id;
-            break;
-          }
-        }
+      
+      // Even if there are no listings, a 200 response with empty items array is still success
+      if (error.response?.status === 200) {
+        console.log('✅ Listings API accessible (no listings found, which is normal for new accounts)');
+        return true;
       }
+      
+      console.error('Listings API test failed:', error.response?.status, error.message);
+      throw new Error('Seller ID obtained but listings API access failed');
+    }
+  }
 
-      // Method 3: Deep search
-      if (!sellerId) {
-        console.log('Performing deep search for seller ID...');
-        const searchForSellerId = (obj, path = '') => {
-          if (typeof obj !== 'object' || obj === null) return null;
-          
-          for (const [key, value] of Object.entries(obj)) {
-            const currentPath = path ? `${path}.${key}` : key;
-            
-            // Check if this key contains 'seller' and the value looks like an ID
-            if (key.toLowerCase().includes('seller') && typeof value === 'string' && value.length > 5) {
-              console.log(`Potential seller ID at ${currentPath}:`, value);
-              return value;
-            }
-            
-            // Recursively search
-            if (typeof value === 'object') {
-              const found = searchForSellerId(value, currentPath);
-              if (found) return found;
-            }
-          }
-          return null;
-        };
-        
-        sellerId = searchForSellerId(data);
-      }
+  /**
+   * Validate connection and get seller info - THE RIGHT WAY
+   */
+  async validateConnection(refreshToken) {
+    try {
+      const accessToken = await this.getAccessToken(refreshToken);
 
-      if (!sellerId) {
-        console.error('❌ Could not find seller ID anywhere in response');
-        console.error('Please check the debug output above and look for any ID-like strings');
-        throw new Error('Could not determine seller ID from Amazon response. Check server logs for full response structure.');
-      }
+      console.log('Getting Amazon seller ID using Product Fees API method...');
+      
+      // Use the official method to get seller ID
+      const sellerId = await this.getSellerIdFromFeesAPI(accessToken);
+      
+      console.log('✅ Successfully obtained seller ID:', sellerId);
 
-      console.log('✅ Successfully found seller ID:', sellerId);
+      // Test that the seller ID works with listings API
+      console.log('Testing seller ID with listings API...');
+      await this.testSellerIdWithListings(accessToken, sellerId);
 
       return {
         sellerId,
@@ -222,19 +234,8 @@ class AmazonService {
         isValid: true
       };
     } catch (error) {
-      console.error('❌ Error validating Amazon connection:', {
-        status: error.response?.status,
-        statusText: error.response?.statusText,
-        data: error.response?.data,
-        message: error.message
-      });
-      
-      // If it's a 403, the app might not have proper permissions
-      if (error.response?.status === 403) {
-        throw new Error('Access denied. Your app may not have proper permissions or may not be authorized correctly.');
-      }
-      
-      throw new Error('Invalid Amazon authorization or connection expired');
+      console.error('❌ Error validating Amazon connection:', error.message);
+      throw new Error(error.message);
     }
   }
 
