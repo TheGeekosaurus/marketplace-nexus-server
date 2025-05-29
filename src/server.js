@@ -64,7 +64,15 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'clientId', 'clientSecret', 'x-requested-with'],
+  allowedHeaders: [
+    'Content-Type', 
+    'Authorization', 
+    'clientId', 
+    'clientSecret', 
+    'x-requested-with',
+    'refreshtoken',    // Add for Amazon API
+    'sellerid'         // Add for Amazon API
+  ],
   preflightContinue: false,
   optionsSuccessStatus: 204
 }));
@@ -82,7 +90,7 @@ app.use((req, res, next) => {
   const safeHeaders = { ...req.headers };
   
   // Don't log sensitive headers
-  ['authorization', 'clientsecret', 'clientid'].forEach(header => {
+  ['authorization', 'clientsecret', 'clientid', 'refreshtoken', 'sellerid'].forEach(header => {
     if (safeHeaders[header]) {
       safeHeaders[header] = '[REDACTED]';
     }
