@@ -38,6 +38,11 @@ router.post('/auth-url', async (req, res) => {
 router.post('/exchange-code', async (req, res) => {
   try {
     const { code, state, redirectUri } = req.body;
+    console.log('Exchange code request received:', { 
+      codeLength: code?.length, 
+      state, 
+      redirectUri 
+    });
 
     if (!code || !redirectUri) {
       return res.status(400).json({
@@ -47,6 +52,7 @@ router.post('/exchange-code', async (req, res) => {
     }
 
     // Exchange code for tokens
+    console.log('Exchanging code for tokens...');
     const tokens = await amazonService.exchangeCodeForTokens(code, redirectUri);
 
     // Validate connection and get seller info

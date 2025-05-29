@@ -3,11 +3,11 @@ const crypto = require('crypto');
 
 // Amazon SP-API endpoints
 const ENDPOINTS = {
-  'us-east-1': 'https://sandbox.sellingpartnerapi-na.amazon.com'
+  'us-east-1': 'https://sellingpartnerapi-na.amazon.com'
 };
 
-// US Marketplace ID (Sandbox)
-const US_MARKETPLACE_ID = 'A2Q3Y263D00KWC';
+// US Marketplace ID (Production)
+const US_MARKETPLACE_ID = 'ATVPDKIKX0DER';
 
 // LWA (Login with Amazon) endpoint
 const LWA_ENDPOINT = 'https://api.amazon.com/auth/o2/token';
@@ -39,7 +39,6 @@ class AmazonService {
     // Amazon SP-API uses simplified OAuth parameters
     const params = new URLSearchParams({
       application_id: this.appId,  // Changed from client_id to application_id
-      version: 'beta',             // Required for draft applications
       state: state,
       redirect_uri: redirectUri
     });
