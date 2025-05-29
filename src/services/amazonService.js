@@ -31,18 +31,17 @@ class AmazonService {
   }
 
   /**
-   * Generate OAuth authorization URL
+   * Generate OAuth authorization URL for Amazon SP-API
    */
   generateAuthUrl(redirectUri) {
     const state = crypto.randomBytes(16).toString('hex');
 
+    // Amazon SP-API uses simplified OAuth parameters
     const params = new URLSearchParams({
-      client_id: this.appId,
-      scope: 'sellingpartnerapi::migration',
-      response_type: 'code',
-      redirect_uri: redirectUri,
+      application_id: this.appId,  // Changed from client_id to application_id
+      version: 'beta',             // Required for draft applications
       state: state,
-      version: 'beta'  // Required for draft applications
+      redirect_uri: redirectUri
     });
 
     const authUrl = `https://sellercentral.amazon.com/apps/authorize/consent?${params.toString()}`;
