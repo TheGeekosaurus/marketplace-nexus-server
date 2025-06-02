@@ -403,7 +403,7 @@ class AmazonService {
    * @param {string} reportType - The type of report to request
    * @returns {Promise<{reportId: string}>} The report ID
    */
-  async requestListingsReport(refreshToken, reportType = REPORT_TYPES.ACTIVE_LISTINGS) {
+  async requestListingsReport(refreshToken, reportType = REPORT_TYPES.ALL_LISTINGS) {
     try {
       console.log('=== REQUESTING AMAZON LISTINGS REPORT ===');
       console.log('Report type:', reportType);
@@ -594,11 +594,11 @@ class AmazonService {
       }
       
       // Only add if we have a SKU (check both possible column names)
-      if (listing['sku'] || listing['seller-sku']) {
-        // Transform to our standard format
+      if (listing['seller-sku'] || listing['sku']) {
+        // Transform to our standard format - Enhanced for GET_MERCHANT_LISTINGS_ALL_DATA
         const transformed = {
-          sku: listing['sku'] || listing['seller-sku'],
-          asin: listing['asin'] || listing['asin1'] || '',
+          sku: listing['seller-sku'] || listing['sku'],
+          asin: listing['asin1'] || listing['asin2'] || listing['asin3'] || listing['asin'] || '',
           productName: listing['item-name'] || listing['product-name'] || listing['title'] || 'Unknown Product',
           price: parseFloat(listing['price'] || listing['list-price'] || 0),
           quantity: parseInt(listing['quantity'] || listing['available-quantity'] || 0),
@@ -608,6 +608,25 @@ class AmazonService {
           description: listing['item-description'] || listing['description'] || '',
           openDate: listing['open-date'] || listing['created-date'] || null,
           fulfillmentChannel: listing['fulfillment-channel'] || listing['fulfillment-type'] || 'DEFAULT',
+          
+          // Enhanced fields from GET_MERCHANT_LISTINGS_ALL_DATA
+          listingId: listing['listing-id'] || null,
+          productIdType: listing['product-id-type'] || null,
+          productId: listing['product-id'] || null,
+          itemNote: listing['item-note'] || '',
+          shippingFee: parseFloat(listing['zshop-shipping-fee'] || 0),
+          expeditedShipping: listing['expedited-shipping'] === 'Y' || listing['expedited-shipping'] === 'true',
+          willShipInternationally: listing['will-ship-internationally'] === 'Y' || listing['will-ship-internationally'] === 'true',
+          itemIsMarketplace: listing['item-is-marketplace'] === 'Y' || listing['item-is-marketplace'] === 'true',
+          merchantShippingGroup: listing['merchant-shipping-group'] || null,
+          category: listing['zshop-category1'] || null,
+          browsePath: listing['zshop-browse-path'] || null,
+          storefrontFeature: listing['zshop-storefront-feature'] || null,
+          boldface: listing['zshop-boldface'] === 'Y' || listing['zshop-boldface'] === 'true',
+          bidForFeaturedPlacement: listing['bid-for-featured-placement'] === 'Y' || listing['bid-for-featured-placement'] === 'true',
+          addDelete: listing['add-delete'] || null,
+          pendingQuantity: parseInt(listing['pending-quantity'] || 0),
+          
           rawData: listing // Keep original data for reference
         };
         
@@ -634,7 +653,7 @@ class AmazonService {
    */
   async getListingsViaReports(refreshToken, sellerId, options = {}) {
     try {
-      const { reportType = REPORT_TYPES.ACTIVE_LISTINGS } = options;
+      const { reportType = REPORT_TYPES.ALL_LISTINGS } = options;
       
       console.log('=== FETCHING LISTINGS VIA REPORTS API ===');
       console.log('Seller ID:', sellerId);

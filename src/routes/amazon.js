@@ -289,7 +289,7 @@ router.post('/sync-listings', async (req, res) => {
 
     // Use the new Reports API method which handles everything
     const result = await amazonService.getListings(refreshToken, sellerId, {
-      reportType: 'GET_FLAT_FILE_OPEN_LISTINGS_DATA' // Active listings
+      reportType: 'GET_MERCHANT_LISTINGS_ALL_DATA' // All listings with rich data
     });
 
     // Return summary for the edge function to process
