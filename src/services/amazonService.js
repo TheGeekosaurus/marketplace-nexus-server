@@ -564,39 +564,67 @@ class AmazonService {
     const listings = [];
     
     console.log('Report headers:', headers.join(', '));
+    console.log('Total lines in report:', lines.length);
     
     // Parse each data line
     for (let i = 1; i < lines.length; i++) {
       const values = lines[i].split('\t');
       const listing = {};
       
+      // Skip empty lines
+      if (values.length === 1 && values[0].trim() === '') {
+        continue;
+      }
+      
       // Map each value to its header
       headers.forEach((header, index) => {
         listing[header] = values[index] || '';
       });
       
-      // Only add if we have a SKU
-      if (listing['seller-sku']) {
+      // Debug first few listings
+      if (i <= 3) {
+        console.log(`Listing ${i} data:`, {
+          sku: listing['sku'],
+          asin: listing['asin'],
+          price: listing['price'],
+          quantity: listing['quantity'],
+          valuesLength: values.length,
+          headersLength: headers.length
+        });
+      }
+      
+      // Only add if we have a SKU (check both possible column names)
+      if (listing['sku'] || listing['seller-sku']) {
         // Transform to our standard format
         const transformed = {
-          sku: listing['seller-sku'],
-          asin: listing['asin1'] || listing['asin'],
-          productName: listing['item-name'] || 'Unknown Product',
-          price: parseFloat(listing['price'] || 0),
-          quantity: parseInt(listing['quantity'] || 0),
-          status: listing['status'] || 'ACTIVE',
-          condition: listing['item-condition'] || 'new',
-          imageUrl: listing['image-url'] || null,
-          description: listing['item-description'] || '',
-          openDate: listing['open-date'] || null,
-          fulfillmentChannel: listing['fulfillment-channel'] || 'DEFAULT',
+          sku: listing['sku'] || listing['seller-sku'],
+          asin: listing['asin'] || listing['asin1'] || '',
+          productName: listing['item-name'] || listing['product-name'] || listing['title'] || 'Unknown Product',
+          price: parseFloat(listing['price'] || listing['list-price'] || 0),
+          quantity: parseInt(listing['quantity'] || listing['available-quantity'] || 0),
+          status: listing['status'] || listing['listing-status'] || 'ACTIVE',
+          condition: listing['item-condition'] || listing['condition'] || 'new',
+          imageUrl: listing['image-url'] || listing['main-image-url'] || null,
+          description: listing['item-description'] || listing['description'] || '',
+          openDate: listing['open-date'] || listing['created-date'] || null,
+          fulfillmentChannel: listing['fulfillment-channel'] || listing['fulfillment-type'] || 'DEFAULT',
           rawData: listing // Keep original data for reference
         };
         
         listings.push(transformed);
+      } else {
+        // Debug why listing was skipped
+        if (i <= 3) {
+          console.log(`Listing ${i} skipped - no SKU found:`, {
+            availableKeys: Object.keys(listing),
+            skuValue: listing['sku'],
+            sellerSkuValue: listing['seller-sku']
+          });
+        }
       }
     }
     
+    console.log(`Successfully parsed ${listings.length} listings from ${lines.length - 1} data lines`);
     return listings;
   }
 
