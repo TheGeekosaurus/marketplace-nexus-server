@@ -168,4 +168,66 @@ router.get('/listing/:sku', async (req, res) => {
   }
 });
 
+/**
+ * Sync all listings for a user (called by edge function)
+ */
+router.post('/sync-listings', async (req, res) => {
+  try {
+    const { userId, marketplaceId, connection } = req.body;
+
+    if (!userId || !marketplaceId || !connection) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required parameters'
+      });
+    }
+
+    const { refreshToken, sellerId } = connection;
+
+    if (!refreshToken || !sellerId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid connection data'
+      });
+    }
+
+    // Fetch all listings with pagination
+    let allListings = [];
+    let nextToken = null;
+    const limit = 50;
+
+    do {
+      const result = await amazonService.getListings(refreshToken, sellerId, {
+        limit,
+        nextToken,
+        status: 'ACTIVE'
+      });
+
+      if (result.success && result.data) {
+        allListings = allListings.concat(result.data);
+        nextToken = result.nextToken;
+      } else {
+        break;
+      }
+    } while (nextToken);
+
+    // Return summary for the edge function to process
+    res.json({
+      success: true,
+      data: {
+        userId,
+        marketplaceId,
+        totalSynced: allListings.length,
+        listings: allListings
+      }
+    });
+  } catch (error) {
+    console.error('Amazon sync error:', error.message);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
 module.exports = router;

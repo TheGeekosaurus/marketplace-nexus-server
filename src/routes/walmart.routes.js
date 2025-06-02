@@ -7,7 +7,8 @@ const {
   createOffer,
   getFeedStatus,
   getInventory,
-  updatePrice
+  updatePrice,
+  syncListings
 } = require('../controllers/walmart.controller');
 
 // Authentication routes
@@ -26,5 +27,8 @@ router.get('/inventory/:sku', getInventory);
 
 // Price update route
 router.post('/update-price', updatePrice);
+
+// Sync route for edge function
+router.post('/sync-listings', syncListings);
 
 module.exports = router;

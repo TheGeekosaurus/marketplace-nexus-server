@@ -394,6 +394,79 @@ const updatePrice = asyncHandler(async (req, res) => {
   }
 });
 
+/**
+ * Sync all listings for a user (called by edge function)
+ * @route POST /api/walmart/sync-listings
+ * @access Private (Edge Function)
+ */
+const syncListings = asyncHandler(async (req, res) => {
+  // Validate request body
+  const schema = Joi.object({
+    userId: Joi.string().uuid().required(),
+    marketplaceId: Joi.string().uuid().required(),
+    credentials: Joi.object({
+      clientId: Joi.string().required(),
+      clientSecret: Joi.string().required()
+    }).required()
+  });
+
+  const { error, value } = schema.validate(req.body);
+  if (error) {
+    return res.status(400).json({ 
+      success: false,
+      message: error.details[0].message 
+    });
+  }
+
+  const { userId, marketplaceId, credentials } = value;
+
+  try {
+    // Get access token
+    const tokenData = await walmartService.getAccessToken(
+      credentials.clientId, 
+      credentials.clientSecret
+    );
+    
+    // Fetch all listings with pagination
+    let allListings = [];
+    let offset = 0;
+    const limit = 50;
+    let hasMore = true;
+
+    while (hasMore) {
+      const listings = await walmartService.getListings(tokenData.accessToken, {
+        limit,
+        offset,
+        status: 'PUBLISHED'
+      });
+
+      const items = listings.ItemResponse || [];
+      allListings = allListings.concat(items.map(item => simplifyWalmartItem(item)));
+      
+      hasMore = items.length === limit && allListings.length < (listings.totalItems || 0);
+      offset += limit;
+    }
+
+    // Return summary for the edge function to process
+    return res.status(200).json({
+      success: true,
+      data: {
+        userId,
+        marketplaceId,
+        totalSynced: allListings.length,
+        listings: allListings
+      }
+    });
+  } catch (error) {
+    console.error('Error syncing Walmart listings:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to sync listings',
+      error: error.response ? error.response.data : null
+    });
+  }
+});
+
 module.exports = {
   authenticateWalmart,
   getListings,
@@ -401,5 +474,6 @@ module.exports = {
   createOffer,
   getFeedStatus,
   getInventory,
-  updatePrice
+  updatePrice,
+  syncListings
 };
