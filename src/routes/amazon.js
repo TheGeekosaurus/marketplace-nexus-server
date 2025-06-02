@@ -169,7 +169,103 @@ router.get('/listing/:sku', async (req, res) => {
 });
 
 /**
+ * Request a listings report (new endpoint for Reports API)
+ */
+router.post('/request-listings-report', async (req, res) => {
+  try {
+    const { refreshToken, reportType } = req.body;
+
+    if (!refreshToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'Refresh token is required'
+      });
+    }
+
+    const result = await amazonService.requestListingsReport(refreshToken, reportType);
+
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error('Request report error:', error.message);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+/**
+ * Check report status (new endpoint for Reports API)
+ */
+router.get('/report-status/:reportId', async (req, res) => {
+  try {
+    const { reportId } = req.params;
+    const { refreshtoken: refreshToken } = req.headers;
+
+    if (!refreshToken || !reportId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Refresh token and report ID are required'
+      });
+    }
+
+    const result = await amazonService.getReportStatus(refreshToken, reportId);
+
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error('Report status error:', error.message);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+/**
+ * Download and parse report (new endpoint for Reports API)
+ */
+router.get('/download-report/:reportDocumentId', async (req, res) => {
+  try {
+    const { reportDocumentId } = req.params;
+    const { refreshtoken: refreshToken } = req.headers;
+
+    if (!refreshToken || !reportDocumentId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Refresh token and report document ID are required'
+      });
+    }
+
+    // Get download URL
+    const { url, compressionAlgorithm } = await amazonService.getReportDownloadUrl(refreshToken, reportDocumentId);
+    
+    // Download and parse
+    const listings = await amazonService.downloadAndParseReport(url, compressionAlgorithm);
+
+    res.json({
+      success: true,
+      count: listings.length,
+      totalCount: listings.length,
+      data: listings
+    });
+  } catch (error) {
+    console.error('Download report error:', error.message);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+/**
  * Sync all listings for a user (called by edge function)
+ * Updated to use Reports API
  */
 router.post('/sync-listings', async (req, res) => {
   try {
@@ -191,25 +287,10 @@ router.post('/sync-listings', async (req, res) => {
       });
     }
 
-    // Fetch all listings with pagination
-    let allListings = [];
-    let nextToken = null;
-    const limit = 50;
-
-    do {
-      const result = await amazonService.getListings(refreshToken, sellerId, {
-        limit,
-        nextToken,
-        status: 'ACTIVE'
-      });
-
-      if (result.success && result.data) {
-        allListings = allListings.concat(result.data);
-        nextToken = result.nextToken;
-      } else {
-        break;
-      }
-    } while (nextToken);
+    // Use the new Reports API method which handles everything
+    const result = await amazonService.getListings(refreshToken, sellerId, {
+      reportType: 'GET_FLAT_FILE_OPEN_LISTINGS_DATA' // Active listings
+    });
 
     // Return summary for the edge function to process
     res.json({
@@ -217,8 +298,8 @@ router.post('/sync-listings', async (req, res) => {
       data: {
         userId,
         marketplaceId,
-        totalSynced: allListings.length,
-        listings: allListings
+        totalSynced: result.count,
+        listings: result.data
       }
     });
   } catch (error) {

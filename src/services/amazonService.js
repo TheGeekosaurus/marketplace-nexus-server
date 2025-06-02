@@ -1,5 +1,7 @@
 const axios = require('axios');
 const crypto = require('crypto');
+const zlib = require('zlib');
+const { promisify } = require('util');
 
 // Amazon SP-API endpoints
 const ENDPOINTS = {
@@ -11,6 +13,17 @@ const US_MARKETPLACE_ID = 'ATVPDKIKX0DER';
 
 // LWA (Login with Amazon) endpoint
 const LWA_ENDPOINT = 'https://api.amazon.com/auth/o2/token';
+
+// Report types for inventory
+const REPORT_TYPES = {
+  ACTIVE_LISTINGS: 'GET_FLAT_FILE_OPEN_LISTINGS_DATA',
+  ALL_LISTINGS: 'GET_MERCHANT_LISTINGS_ALL_DATA',
+  ACTIVE_LISTINGS_ONLY: 'GET_MERCHANT_LISTINGS_DATA',
+  INACTIVE_LISTINGS: 'GET_MERCHANT_LISTINGS_INACTIVE_DATA'
+};
+
+// Promisify zlib functions
+const gunzip = promisify(zlib.gunzip);
 
 class AmazonService {
   constructor() {
@@ -381,6 +394,406 @@ class AmazonService {
     } catch (error) {
       console.error('Error fetching Amazon listing:', error.response?.data || error.message);
       throw new Error(`Failed to fetch Amazon listing for SKU: ${sku}`);
+    }
+  }
+
+  /**
+   * Request a listings report from Amazon
+   * @param {string} refreshToken - The refresh token for authentication
+   * @param {string} reportType - The type of report to request
+   * @returns {Promise<{reportId: string}>} The report ID
+   */
+  async requestListingsReport(refreshToken, reportType = REPORT_TYPES.ACTIVE_LISTINGS) {
+    try {
+      console.log('=== REQUESTING AMAZON LISTINGS REPORT ===');
+      console.log('Report type:', reportType);
+      
+      const accessToken = await this.getAccessToken(refreshToken);
+      
+      const requestBody = {
+        reportType: reportType,
+        marketplaceIds: [this.marketplaceId]
+      };
+      
+      console.log('Request body:', JSON.stringify(requestBody, null, 2));
+      
+      const response = await axios.post(
+        `${this.baseURL}/reports/2021-06-30/reports`,
+        requestBody,
+        {
+          headers: {
+            'x-amz-access-token': accessToken,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      
+      console.log('Report requested successfully:', response.data);
+      console.log('=========================================');
+      
+      return {
+        reportId: response.data.reportId
+      };
+    } catch (error) {
+      console.error('=== ERROR REQUESTING REPORT ===');
+      console.error('Error details:', {
+        message: error.message,
+        status: error.response?.status,
+        data: error.response?.data
+      });
+      console.error('===============================');
+      throw new Error('Failed to request Amazon listings report');
+    }
+  }
+
+  /**
+   * Check the status of a report
+   * @param {string} refreshToken - The refresh token for authentication
+   * @param {string} reportId - The report ID to check
+   * @returns {Promise<{status: string, reportDocumentId?: string}>} The report status
+   */
+  async getReportStatus(refreshToken, reportId) {
+    try {
+      const accessToken = await this.getAccessToken(refreshToken);
+      
+      const response = await axios.get(
+        `${this.baseURL}/reports/2021-06-30/reports/${reportId}`,
+        {
+          headers: {
+            'x-amz-access-token': accessToken,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      
+      const { processingStatus, reportDocumentId } = response.data;
+      
+      console.log(`Report ${reportId} status: ${processingStatus}`);
+      
+      return {
+        status: processingStatus,
+        reportDocumentId: reportDocumentId || null
+      };
+    } catch (error) {
+      console.error('Error checking report status:', error.response?.data || error.message);
+      throw new Error('Failed to check report status');
+    }
+  }
+
+  /**
+   * Get the download URL for a completed report
+   * @param {string} refreshToken - The refresh token for authentication
+   * @param {string} reportDocumentId - The report document ID
+   * @returns {Promise<{url: string, compressionAlgorithm?: string}>} The download URL
+   */
+  async getReportDownloadUrl(refreshToken, reportDocumentId) {
+    try {
+      const accessToken = await this.getAccessToken(refreshToken);
+      
+      const response = await axios.get(
+        `${this.baseURL}/reports/2021-06-30/documents/${reportDocumentId}`,
+        {
+          headers: {
+            'x-amz-access-token': accessToken,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      
+      return {
+        url: response.data.url,
+        compressionAlgorithm: response.data.compressionAlgorithm
+      };
+    } catch (error) {
+      console.error('Error getting report download URL:', error.response?.data || error.message);
+      throw new Error('Failed to get report download URL');
+    }
+  }
+
+  /**
+   * Download and parse a report
+   * @param {string} downloadUrl - The URL to download the report from
+   * @param {string} compressionAlgorithm - The compression algorithm used
+   * @returns {Promise<Array>} The parsed listings data
+   */
+  async downloadAndParseReport(downloadUrl, compressionAlgorithm) {
+    try {
+      console.log('=== DOWNLOADING REPORT ===');
+      console.log('Compression:', compressionAlgorithm || 'none');
+      
+      // Download the report
+      const response = await axios.get(downloadUrl, {
+        responseType: 'arraybuffer'
+      });
+      
+      let reportData = response.data;
+      
+      // Decompress if needed
+      if (compressionAlgorithm === 'GZIP') {
+        console.log('Decompressing GZIP data...');
+        reportData = await gunzip(reportData);
+      }
+      
+      // Convert to string
+      const reportText = reportData.toString('utf-8');
+      console.log('Report size:', reportText.length, 'characters');
+      
+      // Parse tab-delimited data
+      const listings = this.parseTabDelimitedReport(reportText);
+      console.log('Parsed', listings.length, 'listings');
+      console.log('=========================');
+      
+      return listings;
+    } catch (error) {
+      console.error('Error downloading/parsing report:', error.message);
+      throw new Error('Failed to download or parse report');
+    }
+  }
+
+  /**
+   * Parse tab-delimited report data
+   * @param {string} reportText - The raw report text
+   * @returns {Array} Parsed listings
+   */
+  parseTabDelimitedReport(reportText) {
+    const lines = reportText.trim().split('\n');
+    if (lines.length === 0) return [];
+    
+    // First line contains headers
+    const headers = lines[0].split('\t').map(h => h.trim());
+    const listings = [];
+    
+    console.log('Report headers:', headers.join(', '));
+    
+    // Parse each data line
+    for (let i = 1; i < lines.length; i++) {
+      const values = lines[i].split('\t');
+      const listing = {};
+      
+      // Map each value to its header
+      headers.forEach((header, index) => {
+        listing[header] = values[index] || '';
+      });
+      
+      // Only add if we have a SKU
+      if (listing['seller-sku']) {
+        // Transform to our standard format
+        const transformed = {
+          sku: listing['seller-sku'],
+          asin: listing['asin1'] || listing['asin'],
+          productName: listing['item-name'] || 'Unknown Product',
+          price: parseFloat(listing['price'] || 0),
+          quantity: parseInt(listing['quantity'] || 0),
+          status: listing['status'] || 'ACTIVE',
+          condition: listing['item-condition'] || 'new',
+          imageUrl: listing['image-url'] || null,
+          description: listing['item-description'] || '',
+          openDate: listing['open-date'] || null,
+          fulfillmentChannel: listing['fulfillment-channel'] || 'DEFAULT',
+          rawData: listing // Keep original data for reference
+        };
+        
+        listings.push(transformed);
+      }
+    }
+    
+    return listings;
+  }
+
+  /**
+   * Main method to get all listings using Reports API
+   * Replaces the paginated getListings method
+   */
+  async getListingsViaReports(refreshToken, sellerId, options = {}) {
+    try {
+      const { reportType = REPORT_TYPES.ACTIVE_LISTINGS } = options;
+      
+      console.log('=== FETCHING LISTINGS VIA REPORTS API ===');
+      console.log('Seller ID:', sellerId);
+      console.log('Report type:', reportType);
+      console.log('Timestamp:', new Date().toISOString());
+      
+      // Step 1: Request the report
+      const { reportId } = await this.requestListingsReport(refreshToken, reportType);
+      console.log('Report requested, ID:', reportId);
+      
+      // Step 2: Poll for completion (max 15 minutes)
+      const maxWaitTime = 15 * 60 * 1000; // 15 minutes
+      const pollInterval = 10 * 1000; // 10 seconds
+      const startTime = Date.now();
+      
+      let reportDocumentId = null;
+      let reportStatus = 'IN_PROGRESS';
+      
+      while (Date.now() - startTime < maxWaitTime) {
+        const statusResult = await this.getReportStatus(refreshToken, reportId);
+        reportStatus = statusResult.status;
+        
+        if (reportStatus === 'DONE') {
+          reportDocumentId = statusResult.reportDocumentId;
+          break;
+        } else if (reportStatus === 'CANCELLED' || reportStatus === 'FATAL') {
+          throw new Error(`Report failed with status: ${reportStatus}`);
+        }
+        
+        console.log(`Report status: ${reportStatus}, waiting ${pollInterval/1000}s...`);
+        await new Promise(resolve => setTimeout(resolve, pollInterval));
+      }
+      
+      if (!reportDocumentId) {
+        throw new Error('Report processing timeout');
+      }
+      
+      console.log('Report ready, document ID:', reportDocumentId);
+      
+      // Step 3: Get download URL
+      const { url, compressionAlgorithm } = await this.getReportDownloadUrl(refreshToken, reportDocumentId);
+      
+      // Step 4: Download and parse
+      const listings = await this.downloadAndParseReport(url, compressionAlgorithm);
+      
+      console.log('=========================================');
+      
+      // Return in the same format as the old getListings method
+      return {
+        success: true,
+        count: listings.length,
+        totalCount: listings.length,
+        nextToken: null, // Reports API doesn't use pagination
+        data: listings
+      };
+    } catch (error) {
+      console.error('=== ERROR IN REPORTS API ===');
+      console.error(error);
+      console.error('============================');
+      throw error;
+    }
+  }
+
+  /**
+   * Updated getListings method that uses Reports API
+   * Maintains backward compatibility
+   */
+  async getListings(refreshToken, sellerId, options = {}) {
+    try {
+      // Use Reports API instead of the paginated approach
+      return await this.getListingsViaReports(refreshToken, sellerId, options);
+    } catch (error) {
+      console.error('Error in getListings:', error.message);
+      // Fallback to old method if Reports API fails
+      console.warn('Falling back to paginated listings API...');
+      return await this.getListingsLegacy(refreshToken, sellerId, options);
+    }
+  }
+
+  /**
+   * Legacy getListings method (renamed from original)
+   * Kept for fallback purposes
+   */
+  async getListingsLegacy(refreshToken, sellerId, options = {}) {
+    try {
+      const { limit = 20, nextToken } = options;
+      
+      console.log('=== AMAZON GET LISTINGS DEBUG ===');
+      console.log('Input parameters:', {
+        hasRefreshToken: !!refreshToken,
+        sellerId,
+        limit,
+        hasNextToken: !!nextToken,
+        timestamp: new Date().toISOString()
+      });
+      
+      const accessToken = await this.getAccessToken(refreshToken);
+      console.log('Access token obtained, length:', accessToken?.length);
+
+      const params = new URLSearchParams({
+        marketplaceIds: this.marketplaceId,
+        pageSize: limit.toString()
+      });
+
+      if (nextToken) {
+        params.append('pageToken', nextToken);
+      }
+
+      const url = `${this.baseURL}/listings/2021-08-01/items/${sellerId}?${params.toString()}`;
+      console.log('Request URL:', url);
+
+      const response = await axios.get(url, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'x-amz-access-token': accessToken,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      console.log('=== AMAZON LISTINGS RESPONSE DEBUG ===');
+      console.log('Response status:', response.status);
+      console.log('Response headers:', JSON.stringify(response.headers, null, 2));
+      console.log('Response data structure:', {
+        hasItems: !!response.data.items,
+        itemsLength: response.data.items?.length || 0,
+        hasPagination: !!response.data.pagination,
+        totalResultCount: response.data.pagination?.totalResultCount,
+        hasNextPageToken: !!response.data.pagination?.nextPageToken
+      });
+      
+      // Log first item as sample
+      if (response.data.items && response.data.items.length > 0) {
+        console.log('Sample item (first):', JSON.stringify(response.data.items[0], null, 2));
+      }
+      console.log('======================================');
+
+      // Transform response
+      const listings = response.data.items?.map(item => {
+        const transformed = {
+          sku: item.sku,
+          asin: item.asin,
+          fnsku: item.fnsku,
+          productName: item.summaries?.[0]?.itemName || 'Unknown Product',
+          price: parseFloat(item.offers?.[0]?.listingPrice?.amount || 0),
+          quantity: parseInt(item.offers?.[0]?.fulfillableQuantity || 0),
+          status: item.summaries?.[0]?.status || 'UNKNOWN',
+          condition: item.summaries?.[0]?.conditionType || 'NEW',
+          imageUrl: item.summaries?.[0]?.mainImage?.link,
+          lastUpdated: item.summaries?.[0]?.lastUpdatedDate || new Date().toISOString(),
+          fulfillmentChannel: item.offers?.[0]?.fulfillmentChannel
+        };
+        
+        // Log transformation issues
+        if (!item.sku) console.warn('Item missing SKU:', item);
+        if (!item.summaries?.[0]?.itemName) console.warn('Item missing product name for SKU:', item.sku);
+        
+        return transformed;
+      }) || [];
+
+      console.log(`Transformed ${listings.length} listings`);
+
+      return {
+        success: true,
+        count: listings.length,
+        totalCount: response.data.pagination?.totalResultCount || listings.length,
+        nextToken: response.data.pagination?.nextPageToken,
+        data: listings
+      };
+    } catch (error) {
+      console.error('=== AMAZON LISTINGS ERROR ===');
+      console.error('Error fetching Amazon listings:', {
+        message: error.message,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        config: {
+          url: error.config?.url,
+          method: error.config?.method,
+          headers: {
+            ...error.config?.headers,
+            'Authorization': error.config?.headers?.Authorization ? '[REDACTED]' : undefined,
+            'x-amz-access-token': error.config?.headers?.['x-amz-access-token'] ? '[REDACTED]' : undefined
+          }
+        }
+      });
+      console.error('=============================');
+      throw new Error('Failed to fetch Amazon listings');
     }
   }
 }
