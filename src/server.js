@@ -71,7 +71,8 @@ app.use(cors({
     'clientSecret', 
     'x-requested-with',
     'refreshtoken',    // Add for Amazon API
-    'sellerid'         // Add for Amazon API
+    'sellerid',        // Add for Amazon API
+    'X-User-Id'        // Add for product refresh API
   ],
   preflightContinue: false,
   optionsSuccessStatus: 204
