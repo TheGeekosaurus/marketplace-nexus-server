@@ -49,10 +49,11 @@ class ProductRefreshService {
    */
   async refreshProduct(product, defaultStockLevels = {}) {
     try {
-      // Get provider based on source type
-      const provider = productProviderFactory.getProvider(product.source_type);
+      // Get provider based on source URL (auto-detect marketplace)
+      const provider = productProviderFactory.getProviderByUrl(product.source_url);
       if (!provider) {
-        throw new Error(`Unsupported marketplace: ${product.source_type}`);
+        const detectedMarketplace = productProviderFactory.detectMarketplace(product.source_url);
+        throw new Error(`Unsupported marketplace: ${detectedMarketplace} (detected from ${product.source_url})`);
       }
 
       // Fetch latest data
