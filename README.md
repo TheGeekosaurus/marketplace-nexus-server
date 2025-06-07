@@ -1,6 +1,6 @@
 # Marketplace Nexus Server
 
-A Node.js server for integrating with multiple marketplace APIs (Walmart, Amazon, Home Depot, etc.) to retrieve seller listings and fetch product data.
+A Node.js server for integrating with multiple marketplace APIs (Walmart, Amazon, Home Depot, etc.) to retrieve seller listings and fetch product data. **Recently refactored** with clean service architecture for better maintainability and debugging.
 
 ## Features
 
@@ -13,10 +13,17 @@ A Node.js server for integrating with multiple marketplace APIs (Walmart, Amazon
   - (Future) BlueCart API for Walmart products
 
 ### Core Features
+- **Service Architecture**: Clean separation of concerns with dedicated services
+  - `AuditService` - Centralized event logging
+  - `RepricingService` - Price calculations and marketplace updates
+  - `ProductRefreshService` - Product refresh orchestration
+  - `ProductSourcingService` - External API fetching
 - Secure credential management
 - Multi-marketplace authentication
 - Real-time product data fetching
+- Automated product refresh and repricing
 - Standardized response format across all marketplaces
+- Service-to-service authentication for Edge Functions
 - Ready for deployment to Render
 
 ## Prerequisites
@@ -53,8 +60,15 @@ A Node.js server for integrating with multiple marketplace APIs (Walmart, Amazon
    
    # TrajectData API Keys (for product data fetching)
    BIGBOX_API_KEY=your_bigbox_api_key_here
-   # RAINFOREST_API_KEY=your_rainforest_api_key_here  # Future
-   # BLUECART_API_KEY=your_bluecart_api_key_here      # Future
+   RAINFOREST_API_KEY=your_rainforest_api_key_here
+   BLUECART_API_KEY=your_bluecart_api_key_here
+   
+   # Supabase (for service operations)
+   SUPABASE_URL=your_supabase_url
+   SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+   
+   # Backend URL (for service-to-service calls)
+   BACKEND_URL=https://your-app.onrender.com
    ```
    
    Note: Walmart and Amazon seller credentials are passed via request headers, not stored in environment variables.
@@ -76,6 +90,7 @@ A Node.js server for integrating with multiple marketplace APIs (Walmart, Amazon
 - `POST /api/walmart/auth`: Validate and store Walmart API credentials
 - `GET /api/walmart/listings`: Get all listings from your Walmart seller account
 - `GET /api/walmart/listing/:id`: Get a specific listing by ID
+- `POST /api/walmart/update-price`: Update listing price on Walmart
 
 ### Amazon SP-API
 - `POST /api/amazon/auth`: Authenticate with Amazon SP-API
@@ -84,7 +99,23 @@ A Node.js server for integrating with multiple marketplace APIs (Walmart, Amazon
 
 ### Product Data Fetching (TrajectData)
 - `POST /api/products/fetch`: Fetch real product data from any supported marketplace
+- `POST /api/products/refresh`: Refresh single product (legacy endpoint)
 - `GET /api/products/marketplaces`: Get list of supported marketplaces for product fetching
+
+### **NEW: Product Refresh Services**
+- `POST /api/products/refresh-user`: Refresh all products for a user (called by Edge Function)
+- `POST /api/products/refresh-batch`: Refresh specific products by IDs
+- `POST /api/products/refresh/:productId`: Refresh single product
+
+### **NEW: Repricing Services**
+- `POST /api/repricing/batch`: Batch repricing (called by Edge Function)
+- `POST /api/repricing/product/:productId`: Reprice single product
+- `POST /api/repricing/calculate`: Calculate minimum price for product
+- `POST /api/repricing/update-marketplace-price`: Update price directly on marketplace
+
+### Authentication
+- **JWT Token**: Standard user authentication via `Authorization: Bearer <token>`
+- **Service Role**: Internal service calls via `X-Service-Role: true` + `X-User-Id: <userId>`
 
 ## Deployment to Render
 
