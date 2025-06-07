@@ -90,6 +90,15 @@ class ProductRefreshService {
         throw updateError;
       }
 
+      // Get listings for this product to log refresh for each
+      const { data: listings, error: listingsError } = await this.supabase
+        .from('listings')
+        .select('id')
+        .eq('product_id', product.id)
+        .eq('user_id', product.user_id);
+
+      const listingIds = listings?.map(listing => listing.id) || [];
+
       // Log the refresh
       await auditService.logProductRefresh(
         product.id,
@@ -103,7 +112,8 @@ class ProductRefreshService {
           price: latestData.price,
           stockLevel: latestData.stockLevel,
           sourceUrl: product.source_url
-        }
+        },
+        listingIds
       );
 
       return {

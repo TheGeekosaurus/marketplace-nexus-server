@@ -42,18 +42,37 @@ class AuditService {
   /**
    * Log product refresh event
    */
-  async logProductRefresh(productId, userId, oldData, newData) {
+  async logProductRefresh(productId, userId, oldData, newData, listingIds = []) {
+    const eventData = {
+      old_price: oldData.price,
+      new_price: newData.price,
+      old_stock: oldData.stockLevel,
+      new_stock: newData.stockLevel,
+      source_url: oldData.sourceUrl,
+      price_changed: oldData.price !== newData.price,
+      stock_changed: oldData.stockLevel !== newData.stockLevel
+    };
+
+    // If listing IDs provided, create log for each listing
+    if (listingIds && listingIds.length > 0) {
+      const results = [];
+      for (const listingId of listingIds) {
+        const result = await this.logEvent({
+          eventType: 'product_refreshed',
+          eventData,
+          userId,
+          productId,
+          listingId
+        });
+        results.push(result);
+      }
+      return results;
+    }
+
+    // Fallback to old behavior (product-level log without listing ID)
     return this.logEvent({
       eventType: 'product_refreshed',
-      eventData: {
-        old_price: oldData.price,
-        new_price: newData.price,
-        old_stock: oldData.stockLevel,
-        new_stock: newData.stockLevel,
-        source_url: oldData.sourceUrl,
-        price_changed: oldData.price !== newData.price,
-        stock_changed: oldData.stockLevel !== newData.stockLevel
-      },
+      eventData,
       userId,
       productId
     });
