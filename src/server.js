@@ -72,7 +72,8 @@ app.use(cors({
     'x-requested-with',
     'refreshtoken',    // Add for Amazon API
     'sellerid',        // Add for Amazon API
-    'X-User-Id'        // Add for product refresh API
+    'X-User-Id',       // Add for product refresh API
+    'X-Service-Role'   // Add for service-to-service calls
   ],
   preflightContinue: false,
   optionsSuccessStatus: 204
@@ -110,6 +111,8 @@ app.get('/health', (req, res) => {
 app.use('/api/walmart', walmartRoutes);
 app.use('/api/amazon', require('./routes/amazon'));
 app.use('/api/products', productRoutes);
+app.use('/api/products', require('./routes/refresh.routes'));
+app.use('/api/repricing', require('./routes/repricing.routes'));
 
 // 404 handler
 app.use((req, res) => {

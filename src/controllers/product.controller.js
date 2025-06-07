@@ -1,5 +1,6 @@
 const Joi = require('joi');
-const productProviderFactory = require('../services/productProviderFactory');
+const productSourcingService = require('../services/productSourcing/productSourcingService');
+const productRefreshService = require('../services/productRefresh/productRefreshService');
 const walmartService = require('../services/walmart.service');
 
 const productSchema = Joi.object({
@@ -24,57 +25,33 @@ const fetchProduct = async (req, res, next) => {
 
     const { url, marketplace, defaultStockLevels } = value;
 
-    // Get provider based on marketplace or auto-detect from URL
-    let provider;
-    if (marketplace && marketplace !== 'auto-detect') {
-      provider = productProviderFactory.getProvider(marketplace);
-      if (!provider) {
-        return res.status(400).json({
-          success: false,
-          message: `Marketplace '${marketplace}' is not supported`
-        });
-      }
-    } else {
-      provider = productProviderFactory.getProviderByUrl(url);
-      if (!provider) {
-        const detectedMarketplace = productProviderFactory.detectMarketplace(url);
-        return res.status(400).json({
-          success: false,
-          message: `Marketplace '${detectedMarketplace}' is not supported. Supported marketplaces: ${productProviderFactory.getSupportedMarketplaces().join(', ')}`
-        });
-      }
-    }
+    // Use product sourcing service
+    const result = await productSourcingService.fetchFromUrl(url, {
+      marketplace,
+      defaultStockLevels
+    });
 
-    // Validate URL matches the provider
-    if (!provider.validateUrl(url)) {
+    if (!result.success) {
+      // Check if it's an API error
+      if (result.error.includes('Failed to fetch')) {
+        return res.status(503).json({
+          success: false,
+          message: result.error
+        });
+      }
+
       return res.status(400).json({
         success: false,
-        message: `URL does not match expected format for ${provider.getMarketplaceName()}`
+        message: result.error
       });
     }
 
-    // Fetch product data
-    console.log(`Fetching product from ${provider.getMarketplaceName()}...`);
-    const productData = await provider.fetchProduct(url, defaultStockLevels);
-
     // Return success response
-    res.json({
-      success: true,
-      marketplace: provider.getMarketplaceName(),
-      data: productData
-    });
+    res.json(result);
 
   } catch (error) {
     console.error('Product fetch error:', error);
     
-    // Check if it's an API error
-    if (error.message.includes('Failed to fetch')) {
-      return res.status(503).json({
-        success: false,
-        message: error.message
-      });
-    }
-
     // Generic error
     res.status(500).json({
       success: false,
@@ -84,7 +61,7 @@ const fetchProduct = async (req, res, next) => {
 };
 
 const getSupportedMarketplaces = (req, res) => {
-  const supported = productProviderFactory.getSupportedMarketplaces();
+  const supported = productSourcingService.getSupportedMarketplaces();
   
   res.json({
     success: true,
@@ -119,25 +96,20 @@ const refreshProduct = async (req, res, next) => {
     const { productId, sourceUrl, sourceType, currentPrice, settings } = value;
     const userId = req.headers['x-user-id'];
 
-    // Get provider based on source type
-    const provider = productProviderFactory.getProvider(sourceType);
-    if (!provider) {
-      return res.status(400).json({
-        success: false,
-        message: `Marketplace '${sourceType}' is not supported`
+    // Fetch latest product data using sourcing service
+    console.log(`Refreshing product ${productId} from ${sourceType}...`);
+    const sourcingResult = await productSourcingService.fetchFromUrl(sourceUrl, {
+      marketplace: sourceType
+    });
+    
+    if (!sourcingResult.success) {
+      return res.status(404).json({ 
+        success: false, 
+        message: sourcingResult.error || 'Unable to fetch latest product data' 
       });
     }
 
-    // Fetch latest product data
-    console.log(`Refreshing product ${productId} from ${sourceType}...`);
-    const latestData = await provider.fetchProduct(sourceUrl);
-    
-    if (!latestData) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Unable to fetch latest product data' 
-      });
-    }
+    const latestData = sourcingResult.data;
 
     // Calculate price changes
     const priceChanged = currentPrice && latestData.price !== currentPrice;

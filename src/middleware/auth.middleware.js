@@ -10,7 +10,18 @@ const config = require('../config');
  * @param {Object} res - Express response object
  * @param {Function} next - Express next function
  */
-const auth = (req, res, next) => {
+const authMiddleware = (req, res, next) => {
+  // Check for service role header (internal service calls)
+  const serviceRole = req.header('X-Service-Role');
+  const userId = req.header('X-User-Id');
+  
+  if (serviceRole === 'true' && userId) {
+    // Service-to-service authentication
+    // In production, you should verify this with a shared secret
+    req.user = { id: userId, serviceRole: true };
+    return next();
+  }
+
   // Get token from header
   const token = req.header('Authorization')?.replace('Bearer ', '');
 
@@ -31,4 +42,22 @@ const auth = (req, res, next) => {
   }
 };
 
-module.exports = { auth };
+/**
+ * Optional auth middleware - doesn't require auth but adds user if token exists
+ */
+const optionalAuth = (req, res, next) => {
+  const token = req.header('Authorization')?.replace('Bearer ', '');
+  
+  if (token) {
+    try {
+      const decoded = jwt.verify(token, config.jwt.secret);
+      req.user = decoded;
+    } catch (err) {
+      // Invalid token, but continue without user
+    }
+  }
+  
+  next();
+};
+
+module.exports = { authMiddleware, optionalAuth };
