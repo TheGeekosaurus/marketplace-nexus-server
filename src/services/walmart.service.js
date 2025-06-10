@@ -268,7 +268,56 @@ class WalmartService {
   }
 
   /**
-   * Create an offer for an existing Walmart item
+   * Extract WPID from Walmart URL
+   * @param {string} url - Walmart product URL
+   * @returns {string|null} - WPID or null if not found
+   */
+  extractWalmartWPID(url) {
+    const match = url.match(/\/ip\/[^\/]+\/(\d+)/);
+    return match ? match[1] : null;
+  }
+
+  /**
+   * Search Walmart catalog by WPID using the Item Search API
+   * @param {string} accessToken - Walmart API access token
+   * @param {string} wpid - Walmart Product ID from URL
+   * @returns {Promise<object>} - Search results
+   */
+  async searchCatalogByWPID(accessToken, wpid) {
+    try {
+      const correlationId = uuidv4();
+      
+      console.log(`Searching Walmart catalog by WPID: ${wpid}`);
+      
+      const response = await axios({
+        method: 'get',
+        url: `${this.apiUrl}/${this.apiVersion}/items/walmart/search`,
+        headers: {
+          'WM_SEC.ACCESS_TOKEN': accessToken,
+          'WM_SVC.NAME': 'Walmart Marketplace',
+          'WM_QOS.CORRELATION_ID': correlationId,
+          'Accept': 'application/json'
+        },
+        params: {
+          query: wpid  // Search by item ID/WPID
+        },
+        timeout: config.walmart.requestTimeout
+      });
+
+      console.log(`Found ${response.data.items?.length || 0} items for WPID ${wpid}`);
+      return response.data;
+    } catch (error) {
+      console.error(`Error searching by WPID ${wpid}:`, error.message);
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', JSON.stringify(error.response.data, null, 2));
+      }
+      throw new Error(`Failed to find product with WPID ${wpid}: ${error.message}`);
+    }
+  }
+
+  /**
+   * Create an offer for an existing Walmart item (Legacy method - kept for compatibility)
    * @param {string} accessToken - Walmart API access token
    * @param {object} offerData - Offer data including SKU, price, condition, etc
    * @returns {Promise<object>} - Feed response
@@ -340,6 +389,81 @@ class WalmartService {
   }
 
   /**
+   * Create OSBM offer using v5.0 specification
+   * @param {string} accessToken - Walmart API access token
+   * @param {object} offerData - Offer data
+   * @returns {Promise<object>} - Feed response
+   */
+  async createOSBMOffer(accessToken, offerData) {
+    try {
+      const correlationId = uuidv4();
+      const requestId = `REQ_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const batchId = `BATCH_${Date.now()}`;
+      
+      // OSBM v5.0 feed structure
+      const feedPayload = {
+        MPItemFeedHeader: {
+          version: '5.0',
+          requestId: requestId,
+          requestBatchId: batchId,
+          feedType: 'MP_ITEM_MATCH',
+          locale: 'en',
+          processMode: 'REPLACE'
+        },
+        MPItem: [{
+          sku: offerData.sku,
+          productId: offerData.productId, // UPC/GTIN
+          productIdType: offerData.productIdType || 'GTIN',
+          price: {
+            amount: offerData.price,
+            currency: 'USD'
+          },
+          inventory: {
+            quantity: offerData.quantity || 100
+          },
+          fulfillmentLagTime: offerData.fulfillmentLagTime || 1
+        }]
+      };
+
+      // Add shipping template if provided
+      if (offerData.shippingTemplate) {
+        feedPayload.MPItem[0].shippingTemplate = offerData.shippingTemplate;
+      }
+
+      console.log('OSBM v5.0 Feed Payload:', JSON.stringify(feedPayload, null, 2));
+
+      const response = await axios({
+        method: 'post',
+        url: `${this.apiUrl}/${this.apiVersion}/feeds`,
+        headers: {
+          'WM_SEC.ACCESS_TOKEN': accessToken,
+          'WM_SVC.NAME': 'Walmart Marketplace',
+          'WM_QOS.CORRELATION_ID': correlationId,
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        params: {
+          feedType: 'MP_ITEM_MATCH'
+        },
+        data: feedPayload,
+        timeout: config.walmart.requestTimeout
+      });
+
+      return {
+        ...response.data,
+        requestId,
+        batchId
+      };
+    } catch (error) {
+      console.error('Error creating OSBM offer:', error.message);
+      if (error.response) {
+        console.error('Response data:', JSON.stringify(error.response.data, null, 2));
+      }
+      throw new Error(`Failed to create OSBM offer: ${error.message}`);
+    }
+  }
+
+  /**
    * Get feed status to check offer creation progress
    * @param {string} accessToken - Walmart API access token
    * @param {string} feedId - Feed ID from createOffer response
@@ -370,6 +494,147 @@ class WalmartService {
       }
       throw new Error(`Failed to get feed status: ${error.message}`);
     }
+  }
+
+  /**
+   * Get detailed feed status including item-level information
+   * @param {string} accessToken - Walmart API access token
+   * @param {string} feedId - Feed ID
+   * @returns {Promise<object>} - Detailed feed status
+   */
+  async getFeedStatusDetailed(accessToken, feedId) {
+    try {
+      const correlationId = uuidv4();
+      
+      const response = await axios({
+        method: 'get',
+        url: `${this.apiUrl}/${this.apiVersion}/feeds/${feedId}`,
+        headers: {
+          'WM_SEC.ACCESS_TOKEN': accessToken,
+          'WM_SVC.NAME': 'Walmart Marketplace',
+          'WM_QOS.CORRELATION_ID': correlationId,
+          'Accept': 'application/json'
+        },
+        params: {
+          includeDetails: true,
+          offset: 0,
+          limit: 50
+        },
+        timeout: config.walmart.requestTimeout
+      });
+
+      return response.data;
+    } catch (error) {
+      console.error(`Error getting detailed feed status ${feedId}:`, error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Monitor feed status with polling until completion
+   * @param {string} accessToken - Walmart API access token
+   * @param {string} feedId - Feed ID to monitor
+   * @param {number} maxAttempts - Maximum polling attempts (default: 30)
+   * @param {number} intervalSeconds - Seconds between polls (default: 60)
+   * @returns {Promise<object>} - Final feed status
+   */
+  async monitorFeedStatus(accessToken, feedId, maxAttempts = 30, intervalSeconds = 60) {
+    console.log(`Starting feed monitoring for ${feedId}, max attempts: ${maxAttempts}`);
+    
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const status = await this.getFeedStatusDetailed(accessToken, feedId);
+        
+        console.log(`Attempt ${attempt}/${maxAttempts} - Feed ${feedId} status: ${status.feedStatus}`);
+        
+        switch (status.feedStatus) {
+          case 'PROCESSED':
+            console.log(`Feed ${feedId} completed successfully`);
+            return {
+              success: true,
+              status: 'COMPLETED',
+              feedStatus: status,
+              message: 'Offer created successfully'
+            };
+            
+          case 'ERROR':
+            console.error(`Feed ${feedId} failed with errors:`, status.itemDetails);
+            return {
+              success: false,
+              status: 'FAILED',
+              feedStatus: status,
+              message: 'Offer creation failed',
+              errors: this.extractFeedErrors(status)
+            };
+            
+          case 'PROCESSING':
+          case 'RECEIVED':
+            if (attempt === maxAttempts) {
+              return {
+                success: false,
+                status: 'TIMEOUT',
+                feedStatus: status,
+                message: 'Feed processing timeout - check status manually'
+              };
+            }
+            
+            // Wait before next attempt
+            await this.sleep(intervalSeconds * 1000);
+            break;
+            
+          default:
+            console.warn(`Unknown feed status: ${status.feedStatus}`);
+            break;
+        }
+      } catch (error) {
+        console.error(`Error checking feed status (attempt ${attempt}):`, error.message);
+        
+        if (attempt === maxAttempts) {
+          return {
+            success: false,
+            status: 'ERROR',
+            message: `Failed to monitor feed: ${error.message}`
+          };
+        }
+        
+        await this.sleep(intervalSeconds * 1000);
+      }
+    }
+  }
+
+  /**
+   * Extract user-friendly error messages from feed response
+   * @param {object} feedStatus - Feed status response
+   * @returns {Array} - Array of error objects
+   */
+  extractFeedErrors(feedStatus) {
+    const errors = [];
+    
+    if (feedStatus.itemDetails?.itemIngestionStatus) {
+      feedStatus.itemDetails.itemIngestionStatus.forEach(item => {
+        if (item.ingestionErrors) {
+          item.ingestionErrors.forEach(error => {
+            errors.push({
+              sku: item.sku,
+              errorCode: error.code,
+              errorMessage: error.description,
+              category: error.category
+            });
+          });
+        }
+      });
+    }
+    
+    return errors;
+  }
+
+  /**
+   * Utility sleep function
+   * @param {number} ms - Milliseconds to sleep
+   * @returns {Promise} - Promise that resolves after delay
+   */
+  sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   /**
@@ -457,6 +722,111 @@ class WalmartService {
         console.error('Response data:', JSON.stringify(error.response.data, null, 2));
       }
       throw new Error(`Failed to update price for SKU ${sku}: ${error.message}`);
+    }
+  }
+
+  /**
+   * Complete OSBM workflow: Extract WPID → Search → Validate → Create Offer → Monitor
+   * @param {string} accessToken - Walmart API access token
+   * @param {object} offerRequest - Complete offer request
+   * @returns {Promise<object>} - Complete workflow result
+   */
+  async createOfferComplete(accessToken, offerRequest) {
+    const {
+      walmartUrl,
+      sku,
+      price,
+      quantity = 100,
+      fulfillmentLagTime = 1
+    } = offerRequest;
+    
+    try {
+      console.log('Starting complete OSBM workflow for:', { walmartUrl, sku, price });
+      
+      // Step 1: Extract WPID from URL
+      const wpid = this.extractWalmartWPID(walmartUrl);
+      if (!wpid) {
+        throw new Error('Could not extract WPID from Walmart URL');
+      }
+      
+      console.log(`Extracted WPID: ${wpid}`);
+      
+      // Step 2: Search catalog to get product details
+      const searchResult = await this.searchCatalogByWPID(accessToken, wpid);
+      if (!searchResult.items || searchResult.items.length === 0) {
+        throw new Error(`Product not found in Walmart catalog: ${wpid}`);
+      }
+      
+      const product = searchResult.items[0];
+      console.log('Found product:', {
+        title: product.title,
+        itemId: product.itemId,
+        brand: product.brand
+      });
+      
+      // Step 3: Extract UPC/GTIN from product
+      let productId = null;
+      let productIdType = 'UPC';
+      
+      // Try to get GTIN first (preferred), then UPC
+      if (product.properties?.gtin) {
+        productId = product.properties.gtin;
+        productIdType = 'GTIN';
+      } else if (product.properties?.upc) {
+        productId = product.properties.upc;
+        productIdType = 'UPC';
+      }
+      
+      if (!productId) {
+        throw new Error('Product missing UPC/GTIN - cannot create offer');
+      }
+      
+      console.log(`Found product identifier: ${productIdType} = ${productId}`);
+      
+      // Step 4: Prepare offer data
+      const offerData = {
+        sku,
+        price,
+        quantity,
+        fulfillmentLagTime,
+        productId,
+        productIdType
+      };
+      
+      // Step 5: Create OSBM offer
+      console.log('Creating OSBM offer with data:', offerData);
+      const feedResponse = await this.createOSBMOffer(accessToken, offerData);
+      
+      console.log(`Feed submitted: ${feedResponse.feedId}`);
+      
+      // Step 6: Monitor until completion (shortened for testing - 5 attempts, 30 seconds)
+      const finalResult = await this.monitorFeedStatus(
+        accessToken, 
+        feedResponse.feedId,
+        5,  // 5 attempts for initial testing
+        30  // 30 seconds between attempts
+      );
+      
+      return {
+        ...finalResult,
+        feedId: feedResponse.feedId,
+        product: {
+          wpid,
+          title: product.title,
+          itemId: product.itemId,
+          brand: product.brand
+        },
+        offer: offerData
+      };
+      
+    } catch (error) {
+      console.error('Complete OSBM workflow failed:', error.message);
+      return {
+        success: false,
+        status: 'ERROR',
+        message: error.message,
+        error: error
+      };
     }
   }
 }

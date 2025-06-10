@@ -467,11 +467,72 @@ const syncListings = asyncHandler(async (req, res) => {
   }
 });
 
+/**
+ * Create an offer using the complete OSBM workflow
+ * @route POST /api/walmart/create-offer-complete
+ * @access Private
+ */
+const createOfferComplete = asyncHandler(async (req, res) => {
+  // Validate request body
+  const schema = Joi.object({
+    credentials: Joi.object({
+      clientId: Joi.string().required(),
+      clientSecret: Joi.string().required()
+    }).required(),
+    offerRequest: Joi.object({
+      walmartUrl: Joi.string().uri().required(),
+      sku: Joi.string().required(),
+      price: Joi.number().positive().required(),
+      quantity: Joi.number().integer().positive().default(100),
+      fulfillmentLagTime: Joi.number().integer().positive().default(1)
+    }).required()
+  });
+
+  const { error, value } = schema.validate(req.body);
+  if (error) {
+    return res.status(400).json({ 
+      success: false,
+      message: error.details[0].message 
+    });
+  }
+
+  const { credentials, offerRequest } = value;
+
+  try {
+    // Get access token
+    const tokenData = await walmartService.getAccessToken(
+      credentials.clientId, 
+      credentials.clientSecret
+    );
+    
+    // Execute complete OSBM workflow
+    const result = await walmartService.createOfferComplete(
+      tokenData.accessToken, 
+      offerRequest
+    );
+
+    // Return result
+    return res.status(200).json({
+      success: true,
+      message: result.success ? 'OSBM workflow completed successfully' : 'OSBM workflow failed',
+      data: result
+    });
+  } catch (error) {
+    console.error('Error in complete OSBM workflow:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to execute OSBM workflow',
+      error: error.response ? error.response.data : null
+    });
+  }
+});
+
 module.exports = {
   authenticateWalmart,
   getListings,
   getListingById,
   createOffer,
+  createOfferComplete,
   getFeedStatus,
   getInventory,
   updatePrice,

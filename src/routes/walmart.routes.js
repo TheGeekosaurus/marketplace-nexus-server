@@ -5,6 +5,7 @@ const {
   getListings, 
   getListingById,
   createOffer,
+  createOfferComplete,
   getFeedStatus,
   getInventory,
   updatePrice,
@@ -20,6 +21,7 @@ router.get('/listing/:id', getListingById);
 
 // Offer creation routes
 router.post('/create-offer', createOffer);
+router.post('/create-offer-complete', createOfferComplete);
 router.get('/feed/:feedId', getFeedStatus);
 
 // Inventory routes
