@@ -113,6 +113,7 @@ app.use('/api/amazon', require('./routes/amazon'));
 app.use('/api/products', productRoutes);
 app.use('/api/products', require('./routes/refresh.routes'));
 app.use('/api/repricing', require('./routes/repricing.routes'));
+app.use('/api/informed', require('./routes/informed'));
 
 // 404 handler
 app.use((req, res) => {

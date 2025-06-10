@@ -1,5 +1,6 @@
 const { createClient } = require('@supabase/supabase-js');
 const auditService = require('../audit/auditService');
+const informedQueueService = require('../informed/informedQueueService');
 
 class RepricingService {
   constructor() {
@@ -121,6 +122,14 @@ class RepricingService {
                   minimumResellPrice,
                   listing.marketplaces.name,
                   'minimum_profit_threshold'
+                );
+
+                // Queue Informed.co min price update
+                await informedQueueService.queueMinPriceUpdatesForListing(
+                  listing.id,
+                  userId,
+                  listing.price,
+                  minimumResellPrice
                 );
 
                 results.updated++;

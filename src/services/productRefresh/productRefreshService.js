@@ -1,6 +1,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const productProviderFactory = require('../productProviderFactory');
 const auditService = require('../audit/auditService');
+const informedQueueService = require('../informed/informedQueueService');
 
 class ProductRefreshService {
   constructor() {
@@ -115,6 +116,23 @@ class ProductRefreshService {
         },
         listingIds
       );
+
+      // Queue Informed.co updates if price changed
+      if (changes.priceChanged) {
+        await informedQueueService.processProductRefreshChanges(
+          product.id,
+          product.user_id,
+          {
+            price: product.current_source_price,
+            stockLevel: product.current_stock_level
+          },
+          {
+            price: latestData.price,
+            stockLevel: latestData.stockLevel
+          },
+          listingIds
+        );
+      }
 
       return {
         success: true,
