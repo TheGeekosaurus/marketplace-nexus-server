@@ -2,11 +2,15 @@ const express = require('express');
 const router = express.Router();
 const informedService = require('../services/informed/informedService');
 const { createClient } = require('@supabase/supabase-js');
+const { authMiddleware } = require('../middleware/auth.middleware');
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
+
+// Apply authentication middleware to all routes
+router.use(authMiddleware);
 
 // Configure Informed.co integration
 router.post('/configure', async (req, res) => {
