@@ -737,51 +737,80 @@ class WalmartService {
       sku,
       price,
       quantity = 100,
-      fulfillmentLagTime = 1
+      fulfillmentLagTime = 1,
+      productId,
+      productIdType
     } = offerRequest;
     
     try {
-      console.log('Starting complete OSBM workflow for:', { walmartUrl, sku, price });
+      console.log('Starting complete OSBM workflow for:', { walmartUrl, sku, price, productId, productIdType });
       
-      // Step 1: Extract WPID from URL
-      const wpid = this.extractWalmartWPID(walmartUrl);
-      if (!wpid) {
-        throw new Error('Could not extract WPID from Walmart URL');
+      let catalogProduct = null;
+      let searchMethod = 'none';
+      
+      // Strategy 1: If we have a source UPC/GTIN, search by that (most accurate)
+      if (productId && productIdType) {
+        console.log(`Searching Walmart catalog by ${productIdType}: ${productId}`);
+        searchMethod = `${productIdType.toLowerCase()}_search`;
+        
+        const searchParams = {};
+        searchParams[productIdType.toLowerCase()] = productId;
+        
+        const searchResult = await this.searchCatalog(accessToken, searchParams);
+        if (searchResult.items && searchResult.items.length > 0) {
+          catalogProduct = searchResult.items[0];
+          console.log(`Found product via ${productIdType} search:`, {
+            title: catalogProduct.title,
+            itemId: catalogProduct.itemId,
+            brand: catalogProduct.brand
+          });
+        }
       }
       
-      console.log(`Extracted WPID: ${wpid}`);
-      
-      // Step 2: Search catalog to get product details
-      const searchResult = await this.searchCatalogByWPID(accessToken, wpid);
-      if (!searchResult.items || searchResult.items.length === 0) {
-        throw new Error(`Product not found in Walmart catalog: ${wpid}`);
+      // Strategy 2: Fallback to WPID search if UPC search failed and we have Walmart URL
+      if (!catalogProduct && walmartUrl) {
+        console.log('UPC search failed, trying WPID extraction from URL...');
+        const wpid = this.extractWalmartWPID(walmartUrl);
+        if (wpid) {
+          console.log(`Extracted WPID: ${wpid}, searching catalog...`);
+          searchMethod = 'wpid_search';
+          
+          const searchResult = await this.searchCatalogByWPID(accessToken, wpid);
+          if (searchResult.items && searchResult.items.length > 0) {
+            catalogProduct = searchResult.items[0];
+            console.log('Found product via WPID search:', {
+              title: catalogProduct.title,
+              itemId: catalogProduct.itemId,
+              brand: catalogProduct.brand
+            });
+          }
+        }
       }
       
-      const product = searchResult.items[0];
-      console.log('Found product:', {
-        title: product.title,
-        itemId: product.itemId,
-        brand: product.brand
-      });
-      
-      // Step 3: Extract UPC/GTIN from product
-      let productId = null;
-      let productIdType = 'UPC';
-      
-      // Try to get GTIN first (preferred), then UPC
-      if (product.properties?.gtin) {
-        productId = product.properties.gtin;
-        productIdType = 'GTIN';
-      } else if (product.properties?.upc) {
-        productId = product.properties.upc;
-        productIdType = 'UPC';
+      if (!catalogProduct) {
+        throw new Error(`Product not found in Walmart catalog using ${searchMethod}`);
       }
       
-      if (!productId) {
-        throw new Error('Product missing UPC/GTIN - cannot create offer');
-      }
+      // Step 3: Get UPC/GTIN from catalog if not provided
+      let finalProductId = productId;
+      let finalProductIdType = productIdType;
       
-      console.log(`Found product identifier: ${productIdType} = ${productId}`);
+      if (!finalProductId) {
+        // Try to get GTIN first (preferred), then UPC from catalog
+        if (catalogProduct.properties?.gtin) {
+          finalProductId = catalogProduct.properties.gtin;
+          finalProductIdType = 'GTIN';
+        } else if (catalogProduct.properties?.upc) {
+          finalProductId = catalogProduct.properties.upc;
+          finalProductIdType = 'UPC';
+        }
+        
+        if (!finalProductId) {
+          throw new Error('Product missing UPC/GTIN - cannot create offer');
+        }
+        
+        console.log(`Using catalog product identifier: ${finalProductIdType} = ${finalProductId}`);
+      }
       
       // Step 4: Prepare offer data
       const offerData = {
@@ -789,8 +818,8 @@ class WalmartService {
         price,
         quantity,
         fulfillmentLagTime,
-        productId,
-        productIdType
+        productId: finalProductId,
+        productIdType: finalProductIdType
       };
       
       // Step 5: Create OSBM offer
@@ -811,10 +840,11 @@ class WalmartService {
         ...finalResult,
         feedId: feedResponse.feedId,
         product: {
-          wpid,
-          title: product.title,
-          itemId: product.itemId,
-          brand: product.brand
+          wpid: catalogProduct.wpid || null,
+          title: catalogProduct.title,
+          itemId: catalogProduct.itemId,
+          brand: catalogProduct.brand,
+          searchMethod: searchMethod
         },
         offer: offerData
       };
