@@ -421,41 +421,13 @@ const syncListings = asyncHandler(async (req, res) => {
   const { userId, marketplaceId, credentials } = value;
 
   try {
-    // Get access token
-    const tokenData = await walmartService.getAccessToken(
-      credentials.clientId, 
-      credentials.clientSecret
-    );
-    
-    // Fetch all listings with pagination
-    let allListings = [];
-    let offset = 0;
-    const limit = 50;
-    let hasMore = true;
+    // Use the marketplace sync service to handle everything
+    const marketplaceSyncService = require('../services/marketplaceSyncService');
+    const result = await marketplaceSyncService.syncWalmartListings(userId, marketplaceId, credentials);
 
-    while (hasMore) {
-      const listings = await walmartService.getListings(tokenData.accessToken, {
-        limit,
-        offset,
-        status: 'PUBLISHED'
-      });
-
-      const items = listings.ItemResponse || [];
-      allListings = allListings.concat(items.map(item => simplifyWalmartItem(item)));
-      
-      hasMore = items.length === limit && allListings.length < (listings.totalItems || 0);
-      offset += limit;
-    }
-
-    // Return summary for the edge function to process
     return res.status(200).json({
       success: true,
-      data: {
-        userId,
-        marketplaceId,
-        totalSynced: allListings.length,
-        listings: allListings
-      }
+      data: result
     });
   } catch (error) {
     console.error('Error syncing Walmart listings:', error);

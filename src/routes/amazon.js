@@ -265,7 +265,7 @@ router.get('/download-report/:reportDocumentId', async (req, res) => {
 
 /**
  * Sync all listings for a user (called by edge function)
- * Updated to use Reports API
+ * Updated to use marketplace sync service
  */
 router.post('/sync-listings', async (req, res) => {
   try {
@@ -287,20 +287,13 @@ router.post('/sync-listings', async (req, res) => {
       });
     }
 
-    // Use the new Reports API method which handles everything
-    const result = await amazonService.getListings(refreshToken, sellerId, {
-      reportType: 'GET_MERCHANT_LISTINGS_ALL_DATA' // All listings with rich data
-    });
+    // Use the marketplace sync service to handle everything
+    const marketplaceSyncService = require('../services/marketplaceSyncService');
+    const result = await marketplaceSyncService.syncAmazonListings(userId, marketplaceId, connection);
 
-    // Return summary for the edge function to process
     res.json({
       success: true,
-      data: {
-        userId,
-        marketplaceId,
-        totalSynced: result.count,
-        listings: result.data
-      }
+      data: result
     });
   } catch (error) {
     console.error('Amazon sync error:', error.message);
