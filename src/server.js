@@ -114,6 +114,7 @@ app.use('/api/products', productRoutes);
 app.use('/api/products', require('./routes/refresh.routes'));
 app.use('/api/repricing', require('./routes/repricing.routes'));
 app.use('/api/informed', require('./routes/informed'));
+app.use('/api/orders', require('./routes/order.routes'));
 
 // 404 handler
 app.use((req, res) => {
