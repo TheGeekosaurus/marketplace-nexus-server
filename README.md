@@ -5,8 +5,9 @@ A Node.js server for integrating with multiple marketplace APIs (Walmart, Amazon
 ## Features
 
 ### Marketplace Integrations
-- **Walmart Marketplace API**: Fetch seller listings and details
+- **Walmart Marketplace API**: Fetch seller listings, details, and orders
 - **Amazon SP-API**: Retrieve Amazon seller inventory
+- **Order Management**: Complete order sync with profit tracking
 - **TrajectData APIs**: Fetch real product data from multiple sources
   - BigBox API for Home Depot products
   - (Future) Rainforest API for Amazon products
@@ -18,6 +19,7 @@ A Node.js server for integrating with multiple marketplace APIs (Walmart, Amazon
   - `RepricingService` - Price calculations and marketplace updates
   - `ProductRefreshService` - Product refresh orchestration
   - `ProductSourcingService` - External API fetching
+  - `WalmartOrderService` - Order sync and data transformation
 - Secure credential management
 - Multi-marketplace authentication
 - Real-time product data fetching
@@ -112,6 +114,17 @@ A Node.js server for integrating with multiple marketplace APIs (Walmart, Amazon
 - `POST /api/repricing/product/:productId`: Reprice single product
 - `POST /api/repricing/calculate`: Calculate minimum price for product
 - `POST /api/repricing/update-marketplace-price`: Update price directly on marketplace
+
+### **NEW: Order Management**
+- `GET /api/orders/walmart`: Fetch Walmart orders with query parameters
+  - **Query Parameters**: `createdStartDate`, `createdEndDate`, `limit`, `status`, `cursor`
+  - **Response**: Paginated order list with metadata
+- `GET /api/orders/walmart/:orderId`: Get specific Walmart order details
+- `POST /api/orders/sync/walmart`: Manual order sync with listing matching
+  - **Body**: `{ marketplaceId, dateRange: { startDate, endDate }, fullSync }`
+  - **Process**: Fetches orders, matches SKUs to listings, calculates profits
+- `GET /api/orders/sync-status/:marketplaceId`: Get order sync status
+  - **Response**: `{ status, total_orders, last_full_sync, last_incremental_sync }`
 
 ### Authentication
 - **JWT Token**: Standard user authentication via `Authorization: Bearer <token>`

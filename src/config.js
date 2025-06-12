@@ -19,5 +19,11 @@ module.exports = {
   jwt: {
     secret: process.env.JWT_SECRET || 'your_jwt_secret_here',
     expiresIn: process.env.JWT_EXPIRES_IN || '30d'
+  },
+
+  // Supabase configuration
+  supabase: {
+    url: process.env.SUPABASE_URL,
+    serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY
   }
 };
