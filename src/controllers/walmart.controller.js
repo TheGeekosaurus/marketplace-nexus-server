@@ -452,11 +452,13 @@ const createOfferComplete = asyncHandler(async (req, res) => {
       clientSecret: Joi.string().required()
     }).required(),
     offerRequest: Joi.object({
-      walmartUrl: Joi.string().uri().required(),
+      walmartUrl: Joi.string().uri().optional(),
       sku: Joi.string().required(),
       price: Joi.number().positive().required(),
       quantity: Joi.number().integer().positive().default(100),
-      fulfillmentLagTime: Joi.number().integer().positive().default(1)
+      fulfillmentLagTime: Joi.number().integer().positive().default(1),
+      productId: Joi.string().optional(),
+      productIdType: Joi.string().valid('UPC', 'GTIN', 'ISBN', 'EAN').optional()
     }).required()
   });
 
