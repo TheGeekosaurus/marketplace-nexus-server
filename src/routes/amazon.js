@@ -304,4 +304,69 @@ router.post('/sync-listings', async (req, res) => {
   }
 });
 
+/**
+ * Update inventory for a specific SKU
+ * @route POST /api/amazon/update-inventory
+ * @access Private
+ */
+router.post('/update-inventory', async (req, res) => {
+  try {
+    const { connection, sku, quantity, productType } = req.body;
+
+    // Validate request body
+    if (!connection || !sku || quantity === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: 'Connection, SKU, and quantity are required'
+      });
+    }
+
+    const { refreshToken, sellerId } = connection;
+
+    if (!refreshToken || !sellerId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid connection data - missing refreshToken or sellerId'
+      });
+    }
+
+    // Validate quantity is a non-negative integer
+    if (!Number.isInteger(quantity) || quantity < 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Quantity must be a non-negative integer'
+      });
+    }
+
+    console.log(`Updating Amazon inventory for SKU ${sku} to ${quantity} units`);
+    
+    // Update the inventory via Amazon SP-API
+    const inventoryResponse = await amazonService.updateInventory(
+      refreshToken,
+      sellerId,
+      sku,
+      quantity,
+      productType || 'PRODUCT'
+    );
+
+    return res.status(200).json({
+      success: inventoryResponse.success,
+      message: inventoryResponse.message,
+      data: {
+        sku: inventoryResponse.sku,
+        submissionId: inventoryResponse.submissionId,
+        status: inventoryResponse.status,
+        issues: inventoryResponse.issues || []
+      }
+    });
+  } catch (error) {
+    console.error('Error updating Amazon inventory:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to update inventory',
+      error: error.response ? error.response.data : null
+    });
+  }
+});
+
 module.exports = router;

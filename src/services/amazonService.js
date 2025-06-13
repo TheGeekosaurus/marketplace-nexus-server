@@ -843,6 +843,99 @@ class AmazonService {
       throw new Error('Failed to fetch Amazon listings');
     }
   }
+
+  /**
+   * Update inventory for a specific SKU using patchListingsItem API
+   * @param {string} refreshToken - Amazon refresh token
+   * @param {string} sellerId - Amazon seller ID
+   * @param {string} sku - Product SKU to update
+   * @param {number} quantity - New inventory quantity
+   * @param {string} [productType] - Amazon product type (default: 'PRODUCT')
+   * @param {string} [marketplaceId] - Amazon marketplace ID (default: US)
+   * @returns {Promise<object>} - Update response
+   */
+  async updateInventory(refreshToken, sellerId, sku, quantity, productType = 'PRODUCT', marketplaceId = US_MARKETPLACE_ID) {
+    try {
+      console.log(`Updating Amazon inventory for SKU ${sku} to ${quantity} units`);
+      
+      // Get access token
+      const accessToken = await this.getAccessToken(refreshToken);
+      
+      // Prepare the JSON Patch payload for inventory update
+      const payload = {
+        productType: productType,
+        patches: [
+          {
+            op: 'replace',
+            path: '/fulfillment_availability',
+            value: [
+              {
+                fulfillment_channel_code: 'DEFAULT',
+                quantity: quantity
+              }
+            ]
+          }
+        ]
+      };
+
+      console.log('Amazon inventory update payload:', JSON.stringify(payload, null, 2));
+
+      // Make the PATCH request
+      const response = await axios({
+        method: 'patch',
+        url: `${this.baseURL}/listings/2020-09-01/items/${sellerId}/${encodeURIComponent(sku)}`,
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'x-amz-access-token': accessToken,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'User-Agent': 'MarketBridge/1.0'
+        },
+        params: {
+          marketplaceIds: marketplaceId,
+          issueLocale: 'en_US'
+        },
+        data: payload
+      });
+
+      console.log(`Amazon inventory update response for SKU ${sku}:`, {
+        status: response.data.status,
+        submissionId: response.data.submissionId,
+        issues: response.data.issues
+      });
+
+      // Check if the update was accepted
+      if (response.data.status === 'ACCEPTED') {
+        return {
+          success: true,
+          sku: response.data.sku,
+          submissionId: response.data.submissionId,
+          status: response.data.status,
+          message: 'Inventory update submitted successfully'
+        };
+      } else {
+        // Log issues but don't throw error - Amazon may still process it
+        console.warn(`Amazon inventory update issues for SKU ${sku}:`, response.data.issues);
+        return {
+          success: false,
+          sku: response.data.sku,
+          submissionId: response.data.submissionId,
+          status: response.data.status,
+          issues: response.data.issues,
+          message: 'Inventory update submitted with issues'
+        };
+      }
+    } catch (error) {
+      console.error(`Error updating Amazon inventory for SKU ${sku}:`, {
+        message: error.message,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data
+      });
+      
+      throw new Error(`Failed to update Amazon inventory for SKU ${sku}: ${error.message}`);
+    }
+  }
 }
 
 module.exports = new AmazonService();
