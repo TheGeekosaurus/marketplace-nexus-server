@@ -496,7 +496,7 @@ class WalmartService {
             sku: offerData.sku,
             condition: 'New', // Default to New condition
             productIdentifiers: {
-              productIdType: 'GTIN',
+              productIdType: offerData.productIdType || 'UPC', // Use the actual type that found the product
               productId: offerData.productId
             },
             ShippingWeight: offerData.shippingWeight || 1,
@@ -871,7 +871,8 @@ class WalmartService {
             console.log(`Found product via ${productIdType} search:`, {
               title: catalogProduct.title,
               itemId: catalogProduct.itemId,
-              brand: catalogProduct.brand
+              brand: catalogProduct.brand,
+              properties: catalogProduct.properties // Log properties to see available identifiers
             });
           }
         } catch (searchError) {
@@ -910,26 +911,37 @@ class WalmartService {
         throw new Error(`Product not found in Walmart catalog using ${searchMethod}. Make sure the UPC/GTIN from the source product matches a product in Walmart's catalog.`);
       }
       
-      // Step 3: Get UPC/GTIN from catalog if not provided (for WPID-only searches)
+      // Step 3: Use the same product identifier that successfully found the product
       let finalProductId = productId;
       let finalProductIdType = productIdType;
       
-      if (!finalProductId) {
-        // Try to get GTIN first (preferred), then UPC from catalog
-        if (catalogProduct.properties?.gtin) {
-          finalProductId = catalogProduct.properties.gtin;
-          finalProductIdType = 'GTIN';
-        } else if (catalogProduct.properties?.upc) {
-          finalProductId = catalogProduct.properties.upc;
-          finalProductIdType = 'UPC';
+      // If we found the product with our search, use the same identifier
+      if (productId && productIdType) {
+        console.log(`Using the same identifier that found the product: ${productIdType} = ${productId}`);
+        finalProductId = productId;
+        finalProductIdType = productIdType;
+      } else {
+        // Only for WPID-only searches, try to get identifier from catalog
+        if (catalogProduct.properties) {
+          console.log('Catalog product properties:', catalogProduct.properties);
+          
+          if (catalogProduct.properties.gtin) {
+            finalProductId = catalogProduct.properties.gtin;
+            finalProductIdType = 'GTIN';
+            console.log(`Using catalog GTIN: ${finalProductId}`);
+          } else if (catalogProduct.properties.upc) {
+            finalProductId = catalogProduct.properties.upc;
+            finalProductIdType = 'UPC';
+            console.log(`Using catalog UPC: ${finalProductId}`);
+          }
         }
-        
-        if (!finalProductId) {
-          throw new Error('Product missing UPC/GTIN in catalog - cannot create offer');
-        }
-        
-        console.log(`Using catalog product identifier: ${finalProductIdType} = ${finalProductId}`);
       }
+      
+      if (!finalProductId) {
+        throw new Error('Product missing UPC/GTIN in catalog - cannot create offer');
+      }
+      
+      console.log(`Final product identifier: ${finalProductIdType} = ${finalProductId}`);
       
       // Step 4: Prepare offer data
       const offerData = {
