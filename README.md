@@ -82,9 +82,24 @@ A Node.js server for integrating with multiple marketplace APIs (Walmart, Amazon
 
 ## Environment Variables
 
-- `PORT`: The port on which the server will run
+### Required Variables
+- `PORT`: The port on which the server will run (default: 8000)
 - `NODE_ENV`: Environment (development/production)
 - `CORS_ORIGIN`: The frontend URL for CORS configuration
+- `SUPABASE_URL`: Your Supabase project URL (**Required for order sync**)
+- `SUPABASE_SERVICE_ROLE_KEY`: Supabase service role key (**Required for order sync**)
+
+### Optional Variables
+- `BIGBOX_API_KEY`: TrajectData BigBox API key (for Home Depot products)
+- `RAINFOREST_API_KEY`: TrajectData Rainforest API key (for Amazon products)  
+- `BLUECART_API_KEY`: TrajectData BlueCart API key (for Walmart products)
+- `BACKEND_URL`: Backend URL for service-to-service calls
+- `JWT_SECRET`: JWT secret for legacy authentication (fallback)
+
+### Deployment Notes
+- **Order Management**: Requires `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` for database operations
+- **Authentication**: Uses Supabase JWT tokens for user authentication
+- **Marketplace Credentials**: Stored securely in Supabase, not environment variables
 
 ## API Routes
 
