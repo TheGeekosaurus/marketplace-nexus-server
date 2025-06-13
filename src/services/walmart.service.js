@@ -482,28 +482,26 @@ class WalmartService {
       const requestId = `REQ_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       const batchId = `BATCH_${Date.now()}`;
       
-      // OSBM v5.0 feed structure - use GTIN regardless of search type
+      // OSBM v4.2 feed structure - Offer Setup by Match
       const feedPayload = {
         MPItemFeedHeader: {
-          version: '5.0',
-          requestId: requestId,
-          requestBatchId: batchId,
-          feedType: 'MP_ITEM_MATCH',
+          processMode: 'REPLACE',
+          subset: 'EXTERNAL',
           locale: 'en',
-          processMode: 'REPLACE'
+          sellingChannel: 'mpsetupbymatch',
+          version: '4.2'
         },
         MPItem: [{
-          sku: offerData.sku,
-          productId: offerData.productId, // UPC/GTIN value
-          productIdType: 'GTIN', // Always use GTIN for v5.0 feeds
-          price: {
-            amount: offerData.price,
-            currency: 'USD'
-          },
-          inventory: {
-            quantity: offerData.quantity || 100
-          },
-          fulfillmentLagTime: offerData.fulfillmentLagTime || 1
+          Item: {
+            sku: offerData.sku,
+            condition: 'New', // Default to New condition
+            productIdentifiers: {
+              productIdType: 'GTIN',
+              productId: offerData.productId
+            },
+            ShippingWeight: offerData.shippingWeight || 1,
+            price: offerData.price
+          }
         }]
       };
 
@@ -512,7 +510,7 @@ class WalmartService {
         feedPayload.MPItem[0].shippingTemplate = offerData.shippingTemplate;
       }
 
-      console.log('OSBM v5.0 Feed Payload:', JSON.stringify(feedPayload, null, 2));
+      console.log('OSBM v4.2 Feed Payload:', JSON.stringify(feedPayload, null, 2));
 
       const response = await axios({
         method: 'post',
