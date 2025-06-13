@@ -34,7 +34,7 @@ const getWalmartOrders = asyncHandler(async (req, res) => {
     });
   }
 
-  const { clientId, clientSecret } = req.headers;
+  const { clientid: clientId, clientsecret: clientSecret } = req.headers;
   
   if (!clientId || !clientSecret) {
     return res.status(401).json({
@@ -76,7 +76,7 @@ const getWalmartOrders = asyncHandler(async (req, res) => {
  */
 const getWalmartOrderById = asyncHandler(async (req, res) => {
   const { orderId } = req.params;
-  const { clientId, clientSecret } = req.headers;
+  const { clientid: clientId, clientsecret: clientSecret } = req.headers;
   
   if (!clientId || !clientSecret) {
     return res.status(401).json({
@@ -135,7 +135,7 @@ const syncWalmartOrders = asyncHandler(async (req, res) => {
     });
   }
 
-  const { clientId, clientSecret } = req.headers;
+  const { clientid: clientId, clientsecret: clientSecret } = req.headers;
   const userId = req.headers['x-user-id'] || req.user?.id;
   
   if (!clientId || !clientSecret) {
