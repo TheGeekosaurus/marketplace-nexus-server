@@ -278,6 +278,88 @@ class WalmartService {
   }
 
   /**
+   * Search Walmart items by UPC or GTIN using the Item Search API
+   * @param {string} accessToken - Walmart API access token
+   * @param {string} productId - UPC or GTIN to search for
+   * @param {string} productIdType - Type of product ID ('UPC' or 'GTIN')
+   * @returns {Promise<object>} - Search results
+   */
+  async searchItemsByUPCOrGTIN(accessToken, productId, productIdType) {
+    try {
+      const correlationId = uuidv4();
+      
+      console.log(`Searching Walmart items by ${productIdType}: ${productId}`);
+      
+      // Use the correct parameter name based on the API documentation
+      const queryParam = productIdType.toLowerCase() === 'upc' ? 'upc' : 'gtin';
+      
+      const response = await axios({
+        method: 'get',
+        url: `${this.apiUrl}/${this.apiVersion}/items/walmart/search`,
+        headers: {
+          'WM_SEC.ACCESS_TOKEN': accessToken,
+          'WM_SVC.NAME': 'Walmart Marketplace',
+          'WM_QOS.CORRELATION_ID': correlationId,
+          'Accept': 'application/json'
+        },
+        params: {
+          [queryParam]: productId
+        },
+        timeout: config.walmart.requestTimeout
+      });
+
+      console.log(`Found ${response.data.items?.length || 0} items for ${productIdType} ${productId}`);
+      return response.data;
+    } catch (error) {
+      console.error(`Error searching by ${productIdType} ${productId}:`, error.message);
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', JSON.stringify(error.response.data, null, 2));
+      }
+      throw new Error(`Failed to search items by ${productIdType}: ${error.message}`);
+    }
+  }
+
+  /**
+   * Search Walmart items by query string using the Item Search API
+   * @param {string} accessToken - Walmart API access token
+   * @param {string} query - Query string to search for
+   * @returns {Promise<object>} - Search results
+   */
+  async searchItemsByQuery(accessToken, query) {
+    try {
+      const correlationId = uuidv4();
+      
+      console.log(`Searching Walmart items by query: ${query}`);
+      
+      const response = await axios({
+        method: 'get',
+        url: `${this.apiUrl}/${this.apiVersion}/items/walmart/search`,
+        headers: {
+          'WM_SEC.ACCESS_TOKEN': accessToken,
+          'WM_SVC.NAME': 'Walmart Marketplace',
+          'WM_QOS.CORRELATION_ID': correlationId,
+          'Accept': 'application/json'
+        },
+        params: {
+          query: query
+        },
+        timeout: config.walmart.requestTimeout
+      });
+
+      console.log(`Found ${response.data.items?.length || 0} items for query "${query}"`);
+      return response.data;
+    } catch (error) {
+      console.error(`Error searching by query ${query}:`, error.message);
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', JSON.stringify(error.response.data, null, 2));
+      }
+      throw new Error(`Failed to search items by query: ${error.message}`);
+    }
+  }
+
+  /**
    * Search Walmart catalog by WPID using the Item Search API
    * @param {string} accessToken - Walmart API access token
    * @param {string} wpid - Walmart Product ID from URL
@@ -748,50 +830,58 @@ class WalmartService {
       let catalogProduct = null;
       let searchMethod = 'none';
       
-      // Strategy 1: If we have a source UPC/GTIN, search by that (most accurate)
+      // Strategy 1: If we have a source UPC/GTIN from BlueCart, use the Item Search API (most accurate)
       if (productId && productIdType) {
-        console.log(`Searching Walmart catalog by ${productIdType}: ${productId}`);
+        console.log(`Searching Walmart items by ${productIdType}: ${productId}`);
         searchMethod = `${productIdType.toLowerCase()}_search`;
         
-        const searchParams = {};
-        searchParams[productIdType.toLowerCase()] = productId;
-        
-        const searchResult = await this.searchCatalog(accessToken, searchParams);
-        if (searchResult.items && searchResult.items.length > 0) {
-          catalogProduct = searchResult.items[0];
-          console.log(`Found product via ${productIdType} search:`, {
-            title: catalogProduct.title,
-            itemId: catalogProduct.itemId,
-            brand: catalogProduct.brand
-          });
-        }
-      }
-      
-      // Strategy 2: Fallback to WPID search if UPC search failed and we have Walmart URL
-      if (!catalogProduct && walmartUrl) {
-        console.log('UPC search failed, trying WPID extraction from URL...');
-        const wpid = this.extractWalmartWPID(walmartUrl);
-        if (wpid) {
-          console.log(`Extracted WPID: ${wpid}, searching catalog...`);
-          searchMethod = 'wpid_search';
-          
-          const searchResult = await this.searchCatalogByWPID(accessToken, wpid);
+        try {
+          const searchResult = await this.searchItemsByUPCOrGTIN(accessToken, productId, productIdType);
           if (searchResult.items && searchResult.items.length > 0) {
             catalogProduct = searchResult.items[0];
-            console.log('Found product via WPID search:', {
+            console.log(`Found product via ${productIdType} search:`, {
               title: catalogProduct.title,
               itemId: catalogProduct.itemId,
               brand: catalogProduct.brand
             });
           }
+        } catch (searchError) {
+          console.log(`Item search by ${productIdType} failed:`, searchError.message);
+        }
+      }
+      
+      // Strategy 2: Fallback to query search using WPID if UPC search failed and we have Walmart URL
+      if (!catalogProduct && walmartUrl) {
+        console.log('UPC search failed, trying WPID extraction from URL...');
+        const wpid = this.extractWalmartWPID(walmartUrl);
+        if (wpid) {
+          console.log(`Extracted WPID: ${wpid}, searching items...`);
+          searchMethod = 'wpid_query_search';
+          
+          try {
+            const searchResult = await this.searchItemsByQuery(accessToken, wpid);
+            if (searchResult.items && searchResult.items.length > 0) {
+              // Find the item that matches the WPID exactly
+              catalogProduct = searchResult.items.find(item => 
+                item.itemId === wpid || item.itemId === parseInt(wpid)
+              ) || searchResult.items[0];
+              console.log('Found product via WPID query search:', {
+                title: catalogProduct.title,
+                itemId: catalogProduct.itemId,
+                brand: catalogProduct.brand
+              });
+            }
+          } catch (queryError) {
+            console.log('WPID query search failed:', queryError.message);
+          }
         }
       }
       
       if (!catalogProduct) {
-        throw new Error(`Product not found in Walmart catalog using ${searchMethod}`);
+        throw new Error(`Product not found in Walmart catalog using ${searchMethod}. Make sure the UPC/GTIN from the source product matches a product in Walmart's catalog.`);
       }
       
-      // Step 3: Get UPC/GTIN from catalog if not provided
+      // Step 3: Get UPC/GTIN from catalog if not provided (for WPID-only searches)
       let finalProductId = productId;
       let finalProductIdType = productIdType;
       
@@ -806,7 +896,7 @@ class WalmartService {
         }
         
         if (!finalProductId) {
-          throw new Error('Product missing UPC/GTIN - cannot create offer');
+          throw new Error('Product missing UPC/GTIN in catalog - cannot create offer');
         }
         
         console.log(`Using catalog product identifier: ${finalProductIdType} = ${finalProductId}`);
@@ -840,7 +930,7 @@ class WalmartService {
         ...finalResult,
         feedId: feedResponse.feedId,
         product: {
-          wpid: catalogProduct.wpid || null,
+          wpid: catalogProduct.itemId || null,
           title: catalogProduct.title,
           itemId: catalogProduct.itemId,
           brand: catalogProduct.brand,
