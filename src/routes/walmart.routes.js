@@ -9,6 +9,7 @@ const {
   getFeedStatus,
   getInventory,
   updatePrice,
+  updateInventory,
   syncListings
 } = require('../controllers/walmart.controller');
 
@@ -29,6 +30,9 @@ router.get('/inventory/:sku', getInventory);
 
 // Price update route
 router.post('/update-price', updatePrice);
+
+// Inventory update route
+router.post('/update-inventory', updateInventory);
 
 // Sync route for edge function
 router.post('/sync-listings', syncListings);

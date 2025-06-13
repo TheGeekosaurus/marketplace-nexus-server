@@ -837,6 +837,64 @@ class WalmartService {
   }
 
   /**
+   * Update inventory for a specific SKU
+   * @param {string} accessToken - Walmart API access token
+   * @param {string} sku - SKU to update inventory for
+   * @param {number} quantity - New inventory quantity
+   * @param {string} [unit] - Unit of measurement (default: 'EACH')
+   * @param {string} [inventoryAvailableDate] - When inventory is available (default: today)
+   * @returns {Promise<object>} - Update response
+   */
+  async updateInventory(accessToken, sku, quantity, unit = 'EACH', inventoryAvailableDate = null) {
+    try {
+      const correlationId = uuidv4();
+      
+      // Default to today's date if not provided
+      if (!inventoryAvailableDate) {
+        inventoryAvailableDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+      }
+      
+      const payload = {
+        sku: sku,
+        quantity: {
+          unit: unit,
+          amount: quantity
+        },
+        inventoryAvailableDate: inventoryAvailableDate
+      };
+      
+      console.log(`Updating inventory for SKU ${sku} to ${quantity} ${unit}`);
+      
+      const response = await axios({
+        method: 'put',
+        url: `${this.apiUrl}/${this.apiVersion}/inventory`,
+        headers: {
+          'WM_SEC.ACCESS_TOKEN': accessToken,
+          'WM_SVC.NAME': 'Walmart Marketplace',
+          'WM_QOS.CORRELATION_ID': correlationId,
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        params: {
+          sku: sku
+        },
+        data: payload,
+        timeout: config.walmart.requestTimeout
+      });
+
+      console.log(`Inventory update response for SKU ${sku}:`, response.data);
+      return response.data;
+    } catch (error) {
+      console.error(`Error updating inventory for SKU ${sku}:`, error.message);
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', JSON.stringify(error.response.data, null, 2));
+      }
+      throw new Error(`Failed to update inventory for SKU ${sku}: ${error.message}`);
+    }
+  }
+
+  /**
    * Complete OSBM workflow: Extract WPID → Search → Validate → Create Offer → Monitor
    * @param {string} accessToken - Walmart API access token
    * @param {object} offerRequest - Complete offer request

@@ -395,6 +395,65 @@ const updatePrice = asyncHandler(async (req, res) => {
 });
 
 /**
+ * Update inventory for a specific SKU
+ * @route POST /api/walmart/update-inventory
+ * @access Private
+ */
+const updateInventory = asyncHandler(async (req, res) => {
+  // Validate request body
+  const schema = Joi.object({
+    credentials: Joi.object({
+      clientId: Joi.string().required(),
+      clientSecret: Joi.string().required()
+    }).required(),
+    sku: Joi.string().required(),
+    quantity: Joi.number().integer().min(0).required(),
+    unit: Joi.string().default('EACH'),
+    inventoryAvailableDate: Joi.string().optional()
+  });
+
+  const { error, value } = schema.validate(req.body);
+  if (error) {
+    return res.status(400).json({ 
+      success: false,
+      message: error.details[0].message 
+    });
+  }
+
+  const { credentials, sku, quantity, unit, inventoryAvailableDate } = value;
+
+  try {
+    // Get access token
+    const tokenData = await walmartService.getAccessToken(
+      credentials.clientId, 
+      credentials.clientSecret
+    );
+    
+    // Update the inventory
+    const inventoryResponse = await walmartService.updateInventory(
+      tokenData.accessToken, 
+      sku,
+      quantity,
+      unit,
+      inventoryAvailableDate
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: 'Inventory updated successfully',
+      data: inventoryResponse
+    });
+  } catch (error) {
+    console.error('Error updating Walmart inventory:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to update inventory',
+      error: error.response ? error.response.data : null
+    });
+  }
+});
+
+/**
  * Sync all listings for a user (called by edge function)
  * @route POST /api/walmart/sync-listings
  * @access Private (Edge Function)
@@ -510,5 +569,6 @@ module.exports = {
   getFeedStatus,
   getInventory,
   updatePrice,
+  updateInventory,
   syncListings
 };
