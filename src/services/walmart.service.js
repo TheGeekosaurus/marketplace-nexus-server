@@ -482,7 +482,7 @@ class WalmartService {
       const requestId = `REQ_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       const batchId = `BATCH_${Date.now()}`;
       
-      // OSBM v5.0 feed structure
+      // OSBM v5.0 feed structure - use GTIN regardless of search type
       const feedPayload = {
         MPItemFeedHeader: {
           version: '5.0',
@@ -494,8 +494,8 @@ class WalmartService {
         },
         MPItem: [{
           sku: offerData.sku,
-          productId: offerData.productId, // UPC/GTIN
-          productIdType: offerData.productIdType || 'GTIN',
+          productId: offerData.productId, // UPC/GTIN value
+          productIdType: 'GTIN', // Always use GTIN for v5.0 feeds
           price: {
             amount: offerData.price,
             currency: 'USD'
@@ -598,16 +598,21 @@ class WalmartService {
           'Accept': 'application/json'
         },
         params: {
-          includeDetails: true,
-          offset: 0,
-          limit: 50
+          includeDetails: 'true', // String value as per docs
+          offset: '0',
+          limit: '50'
         },
         timeout: config.walmart.requestTimeout
       });
 
+      console.log(`Feed ${feedId} detailed status:`, JSON.stringify(response.data, null, 2));
       return response.data;
     } catch (error) {
       console.error(`Error getting detailed feed status ${feedId}:`, error.message);
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', JSON.stringify(error.response.data, null, 2));
+      }
       throw error;
     }
   }
@@ -640,17 +645,20 @@ class WalmartService {
             };
             
           case 'ERROR':
-            console.error(`Feed ${feedId} failed with errors:`, status.itemDetails);
+            console.error(`Feed ${feedId} failed with errors:`, status);
+            const extractedErrors = this.extractFeedErrors(status);
+            console.error('Extracted errors:', extractedErrors);
             return {
               success: false,
               status: 'FAILED',
               feedStatus: status,
               message: 'Offer creation failed',
-              errors: this.extractFeedErrors(status)
+              errors: extractedErrors
             };
             
           case 'PROCESSING':
           case 'RECEIVED':
+          case 'INPROGRESS':
             if (attempt === maxAttempts) {
               return {
                 success: false,
@@ -666,6 +674,16 @@ class WalmartService {
             
           default:
             console.warn(`Unknown feed status: ${status.feedStatus}`);
+            // For unknown statuses, check if it's the last attempt
+            if (attempt === maxAttempts) {
+              return {
+                success: false,
+                status: 'UNKNOWN',
+                feedStatus: status,
+                message: `Feed ended with unknown status: ${status.feedStatus}`
+              };
+            }
+            await this.sleep(intervalSeconds * 1000);
             break;
         }
       } catch (error) {
@@ -692,18 +710,31 @@ class WalmartService {
   extractFeedErrors(feedStatus) {
     const errors = [];
     
-    if (feedStatus.itemDetails?.itemIngestionStatus) {
+    // Check itemDetails.itemIngestionStatus array
+    if (feedStatus.itemDetails?.itemIngestionStatus && Array.isArray(feedStatus.itemDetails.itemIngestionStatus)) {
       feedStatus.itemDetails.itemIngestionStatus.forEach(item => {
-        if (item.ingestionErrors) {
-          item.ingestionErrors.forEach(error => {
+        if (item.ingestionErrors?.ingestionError && Array.isArray(item.ingestionErrors.ingestionError)) {
+          item.ingestionErrors.ingestionError.forEach(error => {
             errors.push({
               sku: item.sku,
+              errorType: error.type,
               errorCode: error.code,
               errorMessage: error.description,
-              category: error.category
+              ingestionStatus: item.ingestionStatus
             });
           });
         }
+      });
+    }
+    
+    // Also check top-level ingestionErrors if present
+    if (feedStatus.ingestionErrors?.ingestionError && Array.isArray(feedStatus.ingestionErrors.ingestionError)) {
+      feedStatus.ingestionErrors.ingestionError.forEach(error => {
+        errors.push({
+          errorType: error.type,
+          errorCode: error.code,
+          errorMessage: error.description
+        });
       });
     }
     
