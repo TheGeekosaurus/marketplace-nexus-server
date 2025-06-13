@@ -123,20 +123,20 @@ class WalmartOrderService {
    */
   mapOrderStatus(orderLine) {
     const statusObj = orderLine?.orderLineStatuses?.orderLineStatus?.[0];
-    if (!statusObj) return 'pending';
+    if (!statusObj) return 'Created';
 
     const status = statusObj.status?.toLowerCase();
     
     const statusMap = {
-      'created': 'pending',
-      'acknowledged': 'processing',
-      'shipped': 'shipped',
-      'delivered': 'delivered',
-      'cancelled': 'cancelled',
-      'refunded': 'refunded'
+      'created': 'Created',
+      'acknowledged': 'Acknowledged',
+      'shipped': 'Shipped',
+      'delivered': 'Delivered',
+      'cancelled': 'Cancelled',
+      'refunded': 'Refunded'
     };
 
-    return statusMap[status] || 'pending';
+    return statusMap[status] || 'Created';
   }
 
   /**
