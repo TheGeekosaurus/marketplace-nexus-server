@@ -1,7 +1,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const auditService = require('../audit/auditService');
-const WalmartService = require('../walmart.service');
-const AmazonService = require('../amazonService');
+const walmartService = require('../walmart.service');
+const amazonService = require('../amazonService');
 
 class InventoryService {
   constructor() {
@@ -9,8 +9,8 @@ class InventoryService {
       process.env.SUPABASE_URL,
       process.env.SUPABASE_SERVICE_ROLE_KEY
     );
-    this.walmartService = new WalmartService();
-    this.amazonService = new AmazonService();
+    this.walmartService = walmartService;
+    this.amazonService = amazonService;
   }
 
   /**
