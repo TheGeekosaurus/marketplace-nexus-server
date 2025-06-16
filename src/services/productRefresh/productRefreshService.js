@@ -216,11 +216,13 @@ class ProductRefreshService {
         }
       }
 
-      // Update user's last refresh time
-      await this.supabase
-        .from('profiles')
-        .update({ last_product_refresh: new Date().toISOString() })
-        .eq('id', userId);
+      // Update user's last refresh time only if products were actually refreshed
+      if (results.processed > 0) {
+        await this.supabase
+          .from('profiles')
+          .update({ last_product_refresh: new Date().toISOString() })
+          .eq('id', userId);
+      }
 
       return {
         success: true,
