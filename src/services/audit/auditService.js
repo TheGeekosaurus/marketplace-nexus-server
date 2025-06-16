@@ -166,6 +166,42 @@ class AuditService {
       userId
     });
   }
+
+  /**
+   * Log inventory sync
+   */
+  async logInventorySync(listingId, productId, userId, oldStock, newStock, marketplace, reason, sourceStock) {
+    return this.logEvent({
+      eventType: 'inventory_synced',
+      eventData: {
+        old_stock: oldStock,
+        new_stock: newStock,
+        marketplace,
+        reason,
+        source_stock: sourceStock
+      },
+      listingId,
+      productId,
+      userId
+    });
+  }
+
+  /**
+   * Log inventory update error
+   */
+  async logInventoryUpdateError(listingId, productId, userId, attemptedStock, marketplace, error) {
+    return this.logEvent({
+      eventType: 'inventory_update_error',
+      eventData: {
+        attempted_stock: attemptedStock,
+        marketplace,
+        error: error.message || error
+      },
+      listingId,
+      productId,
+      userId
+    });
+  }
 }
 
 // Export singleton instance
