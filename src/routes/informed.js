@@ -311,46 +311,104 @@ async function syncMissingPrices(userId, integration) {
 // Helper function to process missing prices report
 async function processMissingPricesReport(userId, reportData, integrationConfig) {
   const updates = [];
-  const marketplaceMappings = integrationConfig.marketplace_mappings || {};
+  console.log(`Processing ${reportData.length} items from missing prices report`);
+  
+  // Map Informed.co marketplace IDs to marketplace names
+  const marketplaceIdMap = {
+    '17860': 'Walmart',
+    '17961': 'Amazon'
+  };
+
+  let processed = 0;
+  let skipped = 0;
+  let matchingAttempts = 0;
 
   for (const item of reportData) {
+    processed++;
     try {
-      // Find our marketplace by informed.co marketplace ID
-      const { data: marketplace } = await supabase
-        .from('marketplaces')
-        .select('*')
-        .eq('user_id', userId)
-        .single();
+      console.log(`Processing item ${processed}/${reportData.length}: SKU=${item.sku}, MarketplaceId=${item.marketplaceId}`);
+      
+      // Get marketplace name from Informed.co ID
+      const marketplaceName = marketplaceIdMap[item.marketplaceId];
+      if (!marketplaceName) {
+        console.log(`Unknown marketplace ID: ${item.marketplaceId}, skipping`);
+        skipped++;
+        continue;
+      }
 
-      if (!marketplace) continue;
+      console.log(`Marketplace: ${marketplaceName}`);
 
-      // Find matching listing based on SKU mapping
-      const { data: listing } = await supabase
-        .from('listings')
-        .select('*, products(*)')
-        .eq('user_id', userId)
-        .eq('sku', item.sku)
-        .single();
+      // Find matching listing based on marketplace-specific SKU strategy
+      let listing = null;
+      matchingAttempts++;
 
-      if (!listing || !listing.products) continue;
+      if (marketplaceName === 'Walmart') {
+        // For Walmart, match by external_id (Walmart Item ID)
+        const { data } = await supabase
+          .from('listings')
+          .select('*, products(*)')
+          .eq('user_id', userId)
+          .eq('external_id', item.sku)
+          .single();
+        listing = data;
+        console.log(`Walmart lookup by external_id=${item.sku}: ${listing ? 'FOUND' : 'NOT FOUND'}`);
+      } else if (marketplaceName === 'Amazon') {
+        // For Amazon, match by sku (ASIN)
+        const { data } = await supabase
+          .from('listings')
+          .select('*, products(*)')
+          .eq('user_id', userId)
+          .eq('sku', item.sku)
+          .single();
+        listing = data;
+        console.log(`Amazon lookup by sku=${item.sku}: ${listing ? 'FOUND' : 'NOT FOUND'}`);
+      }
 
-      // Use stored values from database
-      const cost = parseFloat(listing.products.current_source_price) || 0;
+      if (!listing) {
+        console.log(`No matching listing found for ${marketplaceName} SKU: ${item.sku}`);
+        skipped++;
+        continue;
+      }
+
+      if (!listing.products) {
+        console.log(`Listing found but no product attached: ${item.sku}`);
+        skipped++;
+        continue;
+      }
+
+      // Check if we have required product data
+      const currentSourcePrice = parseFloat(listing.products.current_source_price);
       const shippingCost = parseFloat(listing.products.shipping_cost) || 0;
-      const minPrice = parseFloat(listing.minimum_resell_price) || 0;
+      const minPrice = parseFloat(listing.minimum_resell_price);
+
+      if (!currentSourcePrice || currentSourcePrice <= 0) {
+        console.log(`Missing or invalid source price for ${item.sku}: ${listing.products.current_source_price}`);
+        skipped++;
+        continue;
+      }
+
+      if (!minPrice || minPrice <= 0) {
+        console.log(`Missing or invalid minimum resell price for ${item.sku}: ${listing.minimum_resell_price}`);
+        skipped++;
+        continue;
+      }
+
+      console.log(`✅ Valid update for ${item.sku}: cost=${currentSourcePrice}, shipping=${shippingCost}, minPrice=${minPrice}`);
       
       updates.push({
         sku: item.sku,
-        marketplaceId: item.marketplaceId,
-        cost: cost,
+        marketplaceId: item.marketplaceId, // Use Informed.co's marketplace ID (17860 or 17961)
+        cost: currentSourcePrice,
         minPrice: minPrice,
         shippingCost: shippingCost
       });
     } catch (error) {
       console.error(`Error processing item ${item.sku}:`, error);
+      skipped++;
     }
   }
 
+  console.log(`Processing complete: ${updates.length} updates generated, ${skipped} skipped, ${matchingAttempts} matching attempts`);
   return updates;
 }
 
