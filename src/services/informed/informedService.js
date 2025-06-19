@@ -70,13 +70,32 @@ class InformedService {
 
   async downloadReport(downloadLink) {
     try {
+      console.log('Downloading report from URL:', downloadLink);
+      console.log('URL length:', downloadLink.length);
+      
+      // Ensure the URL is properly formatted
+      const url = new URL(downloadLink);
+      console.log('Parsed URL successfully');
+      
       const response = await axios.get(downloadLink, {
-        responseType: 'text'
+        responseType: 'text',
+        maxRedirects: 5,
+        timeout: 30000 // 30 second timeout
       });
+      
+      console.log('Download response status:', response.status);
+      console.log('Downloaded CSV length:', response.data.length);
       
       return response.data;
     } catch (error) {
-      console.error('Error downloading report:', error.message);
+      console.error('Error downloading report:');
+      console.error('URL:', downloadLink);
+      console.error('Error message:', error.message);
+      console.error('Error code:', error.code);
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', error.response.data);
+      }
       throw new Error(`Failed to download report: ${error.message}`);
     }
   }
