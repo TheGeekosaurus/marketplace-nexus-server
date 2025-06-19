@@ -242,6 +242,11 @@ async function syncMissingPrices(userId, integration) {
     .single();
 
   try {
+    // Debug API key
+    console.log('Integration API key exists:', !!integration.api_key);
+    console.log('API key length:', integration.api_key?.length);
+    console.log('API key starts with:', integration.api_key?.substring(0, 10) + '...');
+    
     // Request report
     const reportRequest = await informedService.requestMissingPricesReport(integration.api_key);
     

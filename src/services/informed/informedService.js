@@ -44,14 +44,27 @@ class InformedService {
 
   async checkReportStatus(apiKey, reportRequestID) {
     try {
-      const response = await axios.get(`${this.reportsBaseUrl}/requests/${reportRequestID}`, {
-        headers: this.createGetHeaders(apiKey)
-      });
+      const url = `${this.reportsBaseUrl}/requests/${reportRequestID}`;
+      const headers = this.createGetHeaders(apiKey);
+      
+      console.log('Making request to:', url);
+      console.log('Headers:', { ...headers, 'x-api-key': '[REDACTED]' });
+      console.log('Report ID:', reportRequestID);
+      
+      const response = await axios.get(url, { headers });
+      
+      console.log('Response status:', response.status);
+      console.log('Response data:', response.data);
       
       return response.data;
     } catch (error) {
-      console.error('Error checking report status:', error.response?.data || error.message);
-      throw new Error(`Failed to check report status: ${error.response?.data?.message || error.message}`);
+      console.error('Error checking report status:');
+      console.error('URL:', `${this.reportsBaseUrl}/requests/${reportRequestID}`);
+      console.error('Headers:', { ...this.createGetHeaders(apiKey), 'x-api-key': '[REDACTED]' });
+      console.error('Error response:', error.response?.data);
+      console.error('Error status:', error.response?.status);
+      console.error('Error message:', error.message);
+      throw new Error(`Failed to check report status: ${error.response?.status} - ${error.response?.data?.message || error.message}`);
     }
   }
 
