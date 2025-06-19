@@ -267,7 +267,7 @@ async function syncMissingPrices(userId, integration) {
     );
 
     // Download and parse report
-    const csvData = await informedService.downloadReport(reportStatus.downloadLink);
+    const csvData = await informedService.downloadReport(reportStatus.DownloadLink);
     const reportData = await informedService.parseMissingPricesReport(csvData);
 
     // Process the report data

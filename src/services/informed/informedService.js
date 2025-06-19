@@ -235,12 +235,18 @@ class InformedService {
     
     while (attempt < maxAttempts) {
       const status = await this.checkFeedStatus(apiKey, feedSubmissionID);
+      console.log('Feed status response:', status);
       
-      if (['Completed', 'CompletedWithErrors'].includes(status.status)) {
+      // Try both casing patterns to be safe
+      const statusValue = status.Status || status.status;
+      
+      if (['Completed', 'CompletedWithErrors'].includes(statusValue)) {
         return status;
-      } else if (status.status === 'Error') {
+      } else if (statusValue === 'Error') {
         throw new Error('Feed processing failed');
       }
+      
+      console.log(`Feed attempt ${attempt + 1}, status: ${statusValue}, waiting 60s...`);
       
       // Wait 60 seconds between checks
       await new Promise(resolve => setTimeout(resolve, 60000));
