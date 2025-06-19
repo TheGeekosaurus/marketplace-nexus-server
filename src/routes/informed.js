@@ -158,26 +158,14 @@ router.post('/sync-missing', async (req, res) => {
   }
 });
 
-// Process batched price updates
+// DEPRECATED: Batch updates removed - using daily sync only
 router.post('/batch-updates', async (req, res) => {
-  try {
-    const userId = req.user?.id;
-
-    if (!userId) {
-      return res.status(401).json({ error: 'User not authenticated' });
-    }
-
-    const result = await processBatchedUpdates(userId);
-    
-    res.json({ 
-      success: true, 
-      processed: result.processed,
-      logs: result.logs
-    });
-  } catch (error) {
-    console.error('Error processing batch updates:', error);
-    res.status(500).json({ error: 'Failed to process batch updates' });
-  }
+  res.json({ 
+    success: true, 
+    processed: 0,
+    logs: [],
+    message: 'Batch updates disabled - using daily sync only'
+  });
 });
 
 // Get integration logs
@@ -412,149 +400,6 @@ async function processMissingPricesReport(userId, reportData, integrationConfig)
   return updates;
 }
 
-// Helper function to process batched updates
-async function processBatchedUpdates(userId) {
-  // Get pending updates
-  const { data: queuedUpdates } = await supabase
-    .from('informed_price_updates_queue')
-    .select('*')
-    .eq('user_id', userId)
-    .eq('processed', false)
-    .order('created_at', { ascending: true })
-    .limit(500);
-
-  if (!queuedUpdates || queuedUpdates.length === 0) {
-    return { processed: 0, logs: [] };
-  }
-
-  // Get integration
-  const { data: integration } = await supabase
-    .from('third_party_integrations')
-    .select('*')
-    .eq('user_id', userId)
-    .eq('integration_type', 'informed_co')
-    .single();
-
-  if (!integration) {
-    throw new Error('Informed.co integration not configured');
-  }
-
-  const logs = [];
-
-  // Process all updates together
-  if (queuedUpdates.length > 0) {
-    const logEntry = await createBatchLog(userId, integration.id, 'batch_price_update', queuedUpdates.length);
-    try {
-      const updates = await prepareBatchUpdates(queuedUpdates);
-      const feedSubmission = await informedService.submitPriceUpdates(integration.api_key, updates);
-      
-      await completeBatchLog(logEntry.id, updates.length, 0, { feedSubmission });
-      logs.push(logEntry);
-    } catch (error) {
-      await failBatchLog(logEntry.id, error.message);
-      logs.push(logEntry);
-    }
-  }
-
-  // Mark items as processed
-  await supabase
-    .from('informed_price_updates_queue')
-    .update({ processed: true })
-    .in('id', queuedUpdates.map(u => u.id));
-
-  return { processed: queuedUpdates.length, logs };
-}
-
-// Helper functions for batch processing
-async function createBatchLog(userId, integrationId, operationType, itemCount) {
-  const { data } = await supabase
-    .from('integration_logs')
-    .insert({
-      user_id: userId,
-      integration_id: integrationId,
-      operation_type: operationType,
-      status: 'processing',
-      items_processed: itemCount
-    })
-    .select()
-    .single();
-  
-  return data;
-}
-
-async function completeBatchLog(logId, succeeded, failed, responseData) {
-  await supabase
-    .from('integration_logs')
-    .update({
-      status: 'completed',
-      completed_at: new Date().toISOString(),
-      items_succeeded: succeeded,
-      items_failed: failed,
-      response_data: responseData
-    })
-    .eq('id', logId);
-}
-
-async function failBatchLog(logId, errorMessage) {
-  await supabase
-    .from('integration_logs')
-    .update({
-      status: 'failed',
-      completed_at: new Date().toISOString(),
-      error_message: errorMessage
-    })
-    .eq('id', logId);
-}
-
-async function prepareBatchUpdates(queuedUpdates) {
-  // Group updates by listing to combine cost and price changes
-  const listingUpdates = new Map();
-  
-  for (const update of queuedUpdates) {
-    const key = update.listing_id;
-    if (!listingUpdates.has(key)) {
-      listingUpdates.set(key, {
-        listing_id: update.listing_id,
-        cost: null,
-        minPrice: null
-      });
-    }
-    
-    const listingUpdate = listingUpdates.get(key);
-    if (update.update_type === 'cost_change') {
-      listingUpdate.cost = update.new_cost;
-    } else if (update.update_type === 'price_change') {
-      listingUpdate.minPrice = update.new_min_price;
-    }
-  }
-  
-  const updates = [];
-  
-  for (const [listingId, updateData] of listingUpdates) {
-    const { data: listing } = await supabase
-      .from('listings')
-      .select('sku, external_id, marketplaces(name), products(base_price, shipping_cost), marketplace_fee_percentage')
-      .eq('id', listingId)
-      .single();
-
-    if (listing && listing.products) {
-      const sku = informedService.mapOurSkuToInformed(listing, listing.marketplaces);
-      if (sku) {
-        // Calculate current cost and min price if not provided in update
-        const prices = informedService.calculateCostAndMinPrice(listing, listing.products);
-        
-        updates.push({
-          sku,
-          cost: updateData.cost || prices.cost,
-          minPrice: updateData.minPrice || prices.minPrice,
-          shippingCost: parseFloat(listing.products.shipping_cost) || 0,
-          marketplaceId: '1' // This should come from config mapping
-        });
-      }
-    }
-  }
-  
-  return updates;
-}
+// DEPRECATED: All batch processing functions removed - using daily sync only
 
 module.exports = router;
