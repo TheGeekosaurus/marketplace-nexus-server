@@ -254,7 +254,7 @@ async function syncMissingPrices(userId, integration) {
     await supabase
       .from('integration_logs')
       .update({
-        external_job_id: reportRequest.reportRequestID,
+        external_job_id: reportRequest.ReportRequestID,
         status: 'processing',
         request_data: { reportRequest }
       })
@@ -263,7 +263,7 @@ async function syncMissingPrices(userId, integration) {
     // Poll for completion
     const reportStatus = await informedService.pollReportCompletion(
       integration.api_key, 
-      reportRequest.reportRequestID
+      reportRequest.ReportRequestID
     );
 
     // Download and parse report
