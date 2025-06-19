@@ -270,8 +270,8 @@ async function syncMissingPrices(userId, integration) {
 
     let feedSubmission = null;
     if (updates.length > 0) {
-      // Submit updates to Informed.co
-      feedSubmission = await informedService.submitMinMaxPrices(integration.api_key, updates);
+      // Submit combined cost and price updates to Informed.co
+      feedSubmission = await informedService.submitPriceUpdates(integration.api_key, updates);
     }
 
     // Update log with completion
@@ -320,35 +320,26 @@ async function processMissingPricesReport(userId, reportData, integrationConfig)
       if (!marketplace) continue;
 
       // Find matching listing based on SKU mapping
-      let listing;
-      if (marketplace.name === 'Walmart') {
-        const { data } = await supabase
-          .from('listings')
-          .select('*, products(*)')
-          .eq('user_id', userId)
-          .eq('external_id', item.sku)
-          .single();
-        listing = data;
-      } else if (marketplace.name === 'Amazon') {
-        const { data } = await supabase
-          .from('listings')
-          .select('*, products(*)')
-          .eq('user_id', userId)
-          .eq('sku', item.sku)
-          .single();
-        listing = data;
-      }
+      const { data: listing } = await supabase
+        .from('listings')
+        .select('*, products(*)')
+        .eq('user_id', userId)
+        .eq('sku', item.sku)
+        .single();
 
       if (!listing || !listing.products) continue;
 
-      // Calculate cost and min price
-      const prices = informedService.calculateCostAndMinPrice(listing, listing.products);
+      // Use stored values from database
+      const cost = parseFloat(listing.products.current_source_price) || 0;
+      const shippingCost = parseFloat(listing.products.shipping_cost) || 0;
+      const minPrice = parseFloat(listing.minimum_resell_price) || 0;
       
       updates.push({
         sku: item.sku,
         marketplaceId: item.marketplaceId,
-        minPrice: prices.minPrice,
-        maxPrice: prices.maxPrice
+        cost: cost,
+        minPrice: minPrice,
+        shippingCost: shippingCost
       });
     } catch (error) {
       console.error(`Error processing item ${item.sku}:`, error);
@@ -387,31 +378,12 @@ async function processBatchedUpdates(userId) {
 
   const logs = [];
 
-  // Group by update type
-  const costUpdates = queuedUpdates.filter(u => u.update_type === 'cost_change');
-  const priceUpdates = queuedUpdates.filter(u => u.update_type === 'price_change');
-
-  // Process cost updates
-  if (costUpdates.length > 0) {
-    const logEntry = await createBatchLog(userId, integration.id, 'batch_cost_update', costUpdates.length);
+  // Process all updates together
+  if (queuedUpdates.length > 0) {
+    const logEntry = await createBatchLog(userId, integration.id, 'batch_price_update', queuedUpdates.length);
     try {
-      const updates = await prepareCostUpdates(costUpdates);
-      const feedSubmission = await informedService.submitCostUpdates(integration.api_key, updates);
-      
-      await completeBatchLog(logEntry.id, updates.length, 0, { feedSubmission });
-      logs.push(logEntry);
-    } catch (error) {
-      await failBatchLog(logEntry.id, error.message);
-      logs.push(logEntry);
-    }
-  }
-
-  // Process price updates
-  if (priceUpdates.length > 0) {
-    const logEntry = await createBatchLog(userId, integration.id, 'batch_price_update', priceUpdates.length);
-    try {
-      const updates = await preparePriceUpdates(priceUpdates);
-      const feedSubmission = await informedService.submitMinMaxPrices(integration.api_key, updates);
+      const updates = await prepareBatchUpdates(queuedUpdates);
+      const feedSubmission = await informedService.submitPriceUpdates(integration.api_key, updates);
       
       await completeBatchLog(logEntry.id, updates.length, 0, { feedSubmission });
       logs.push(logEntry);
@@ -471,48 +443,49 @@ async function failBatchLog(logId, errorMessage) {
     .eq('id', logId);
 }
 
-async function prepareCostUpdates(queuedUpdates) {
-  const updates = [];
+async function prepareBatchUpdates(queuedUpdates) {
+  // Group updates by listing to combine cost and price changes
+  const listingUpdates = new Map();
   
   for (const update of queuedUpdates) {
-    const { data: listing } = await supabase
-      .from('listings')
-      .select('sku, external_id, marketplaces(name)')
-      .eq('id', update.listing_id)
-      .single();
-
-    if (listing) {
-      const sku = informedService.mapOurSkuToInformed(listing, listing.marketplaces);
-      if (sku) {
-        updates.push({
-          sku,
-          cost: update.new_cost
-        });
-      }
+    const key = update.listing_id;
+    if (!listingUpdates.has(key)) {
+      listingUpdates.set(key, {
+        listing_id: update.listing_id,
+        cost: null,
+        minPrice: null
+      });
+    }
+    
+    const listingUpdate = listingUpdates.get(key);
+    if (update.update_type === 'cost_change') {
+      listingUpdate.cost = update.new_cost;
+    } else if (update.update_type === 'price_change') {
+      listingUpdate.minPrice = update.new_min_price;
     }
   }
   
-  return updates;
-}
-
-async function preparePriceUpdates(queuedUpdates) {
   const updates = [];
   
-  for (const update of queuedUpdates) {
+  for (const [listingId, updateData] of listingUpdates) {
     const { data: listing } = await supabase
       .from('listings')
-      .select('sku, external_id, marketplaces(name)')
-      .eq('id', update.listing_id)
+      .select('sku, external_id, marketplaces(name), products(base_price, shipping_cost), marketplace_fee_percentage')
+      .eq('id', listingId)
       .single();
 
-    if (listing) {
+    if (listing && listing.products) {
       const sku = informedService.mapOurSkuToInformed(listing, listing.marketplaces);
       if (sku) {
+        // Calculate current cost and min price if not provided in update
+        const prices = informedService.calculateCostAndMinPrice(listing, listing.products);
+        
         updates.push({
           sku,
-          marketplaceId: '1', // This should come from config mapping
-          minPrice: update.new_min_price,
-          maxPrice: update.new_min_price * 1.2 // 20% above min
+          cost: updateData.cost || prices.cost,
+          minPrice: updateData.minPrice || prices.minPrice,
+          shippingCost: parseFloat(listing.products.shipping_cost) || 0,
+          marketplaceId: '1' // This should come from config mapping
         });
       }
     }

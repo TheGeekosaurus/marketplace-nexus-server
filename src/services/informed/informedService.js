@@ -8,11 +8,20 @@ class InformedService {
     this.feedsBaseUrl = 'https://api.informed.co/v1/feed';
   }
 
-  // Helper to create headers with API key
-  createHeaders(apiKey) {
+  // Helper to create headers for GET requests
+  createGetHeaders(apiKey) {
     return {
       'x-api-key': apiKey,
-      'Content-Type': 'application/json'
+      'accept': 'application/json'
+    };
+  }
+
+  // Helper to create headers for POST requests
+  createPostHeaders(apiKey, contentType = 'application/json') {
+    return {
+      'x-api-key': apiKey,
+      'accept': 'application/json',
+      'Content-Type': contentType
     };
   }
 
@@ -20,7 +29,7 @@ class InformedService {
   async requestMissingPricesReport(apiKey) {
     try {
       const response = await axios.get(`${this.reportsBaseUrl}/requestReport`, {
-        headers: this.createHeaders(apiKey),
+        headers: this.createGetHeaders(apiKey),
         params: {
           reportType: 'Listings_Without_A_Min_Price'
         }
@@ -36,7 +45,7 @@ class InformedService {
   async checkReportStatus(apiKey, reportRequestID) {
     try {
       const response = await axios.get(`${this.reportsBaseUrl}/requests/${reportRequestID}`, {
-        headers: this.createHeaders(apiKey)
+        headers: this.createGetHeaders(apiKey)
       });
       
       return response.data;
@@ -69,10 +78,12 @@ class InformedService {
         .on('data', (row) => {
           results.push({
             sku: row.SKU,
-            marketplaceId: row.MARKETPLACE_ID,
-            currentPrice: parseFloat(row.CURRENT_PRICE) || 0,
+            itemId: row.ITEM_ID,
             title: row.TITLE,
-            itemId: row.ITEM_ID
+            marketplaceId: row.MARKETPLACE_ID,
+            minPrice: parseFloat(row.MIN_PRICE) || 0,
+            stock: parseInt(row.STOCK) || 0,
+            createdDate: row.CREATED_DATE
           });
         })
         .on('end', () => {
@@ -85,37 +96,18 @@ class InformedService {
   }
 
   // Feed Submission API Methods
-  async submitCostUpdates(apiKey, updates) {
-    const csvData = this.generateCostUpdateCSV(updates);
-    return this.submitFeed(apiKey, csvData, 'Set_Cost');
+  async submitPriceUpdates(apiKey, updates) {
+    const csvData = this.generatePriceUpdateCSV(updates);
+    return this.submitFeed(apiKey, csvData);
   }
 
-  async submitMinMaxPrices(apiKey, updates) {
-    const csvData = this.generateMinMaxPricesCSV(updates);
-    return this.submitFeed(apiKey, csvData, 'Set_Min_Max_Prices');
-  }
-
-  async submitManualPrices(apiKey, updates) {
-    const csvData = this.generateManualPricesCSV(updates);
-    return this.submitFeed(apiKey, csvData, 'Set_Manual_Prices');
-  }
-
-  async submitFeed(apiKey, csvData, feedType) {
+  async submitFeed(apiKey, csvData) {
     try {
-      const FormData = require('form-data');
-      const form = new FormData();
-      
-      // Create a buffer from CSV data
-      const csvBuffer = Buffer.from(csvData, 'utf8');
-      form.append('file', csvBuffer, {
-        filename: `${feedType}_${Date.now()}.csv`,
-        contentType: 'text/csv'
-      });
-
-      const response = await axios.post(`${this.feedsBaseUrl}/submissions`, form, {
+      const response = await axios.post(this.feedsBaseUrl, csvData, {
         headers: {
           'x-api-key': apiKey,
-          ...form.getHeaders()
+          'Content-Type': 'text/csv',
+          'accept': 'application/json'
         }
       });
       
@@ -128,8 +120,8 @@ class InformedService {
 
   async checkFeedStatus(apiKey, feedSubmissionID) {
     try {
-      const response = await axios.get(`${this.feedsBaseUrl}/submissions/${feedSubmissionID}`, {
-        headers: this.createHeaders(apiKey)
+      const response = await axios.get(`${this.feedsBaseUrl}/${feedSubmissionID}`, {
+        headers: this.createGetHeaders(apiKey)
       });
       
       return response.data;
@@ -139,29 +131,11 @@ class InformedService {
     }
   }
 
-  // CSV Generation Methods
-  generateCostUpdateCSV(updates) {
-    const headers = 'SKU,COST,CURRENCY\n';
+  // CSV Generation Method
+  generatePriceUpdateCSV(updates) {
+    const headers = 'SKU,COST,CURRENCY,MIN_PRICE,CURRENT_SHIPPING,MARKETPLACE_ID\n';
     const rows = updates.map(update => 
-      `${update.sku},${update.cost},USD`
-    ).join('\n');
-    
-    return headers + rows;
-  }
-
-  generateMinMaxPricesCSV(updates) {
-    const headers = 'SKU,MARKETPLACE_ID,MIN_PRICE,MAX_PRICE\n';
-    const rows = updates.map(update => 
-      `${update.sku},${update.marketplaceId},${update.minPrice},${update.maxPrice || ''}`
-    ).join('\n');
-    
-    return headers + rows;
-  }
-
-  generateManualPricesCSV(updates) {
-    const headers = 'SKU,MARKETPLACE_ID,MANUAL_PRICE\n';
-    const rows = updates.map(update => 
-      `${update.sku},${update.marketplaceId},${update.manualPrice}`
+      `${update.sku},${update.cost},USD,${update.minPrice},${update.shippingCost || ''},${update.marketplaceId}`
     ).join('\n');
     
     return headers + rows;
@@ -208,9 +182,9 @@ class InformedService {
     while (attempt < maxAttempts) {
       const status = await this.checkReportStatus(apiKey, reportRequestID);
       
-      if (status.status === 'Complete') {
+      if (status.Status === 'Complete') {
         return status;
-      } else if (status.status === 'Error') {
+      } else if (status.Status === 'Error') {
         throw new Error('Report generation failed');
       }
       
