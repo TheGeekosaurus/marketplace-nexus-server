@@ -235,31 +235,11 @@ async function syncMissingPrices(userId, integration) {
     console.log('API key length:', integration.api_key?.length);
     console.log('API key starts with:', integration.api_key?.substring(0, 10) + '...');
     
-    // Request report
-    const reportRequest = await informedService.requestMissingPricesReport(integration.api_key);
+    // Full sync: send ALL our listings with valid price data to Informed.co
+    console.log('Starting full sync of all listings with valid price data');
     
-    // Update log with external job ID
-    await supabase
-      .from('integration_logs')
-      .update({
-        external_job_id: reportRequest.ReportRequestID,
-        status: 'processing',
-        request_data: { reportRequest }
-      })
-      .eq('id', logEntry.id);
-
-    // Poll for completion
-    const reportStatus = await informedService.pollReportCompletion(
-      integration.api_key, 
-      reportRequest.ReportRequestID
-    );
-
-    // Download and parse report
-    const csvData = await informedService.downloadReport(reportStatus.DownloadLink);
-    const reportData = await informedService.parseMissingPricesReport(csvData);
-
-    // Process the report data
-    const updates = await processMissingPricesReport(userId, reportData, integration.config);
+    // Generate updates for all our listings with valid data
+    const updates = await generateAllPriceUpdates(userId);
 
     let feedSubmission = null;
     if (updates.length > 0) {
@@ -296,108 +276,87 @@ async function syncMissingPrices(userId, integration) {
   }
 }
 
-// Helper function to process missing prices report
-async function processMissingPricesReport(userId, reportData, integrationConfig) {
+// Generate price updates for ALL listings with valid data (full sync approach)
+async function generateAllPriceUpdates(userId) {
   const updates = [];
-  console.log(`Processing ${reportData.length} items from missing prices report`);
+  console.log('Generating full sync updates for all listings with valid data');
   
-  // Map Informed.co marketplace IDs to marketplace names
+  // Map marketplace names to Informed.co marketplace IDs
   const marketplaceIdMap = {
-    '17860': 'Walmart',
-    '17961': 'Amazon'
+    'Walmart': '17860',
+    'Amazon': '17961'
   };
 
-  let processed = 0;
-  let skipped = 0;
-  let matchingAttempts = 0;
+  try {
+    // Get all active listings with products that have valid pricing data
+    const { data: listings, error } = await supabase
+      .from('listings')
+      .select(`
+        *,
+        products!inner(*),
+        marketplaces!inner(name)
+      `)
+      .eq('user_id', userId)
+      .eq('status', 'active')
+      .not('products.current_source_price', 'is', null)
+      .not('minimum_resell_price', 'is', null)
+      .gt('products.current_source_price', 0)
+      .gt('minimum_resell_price', 0);
 
-  for (const item of reportData) {
-    processed++;
-    try {
-      console.log(`Processing item ${processed}/${reportData.length}: SKU=${item.sku}, MarketplaceId=${item.marketplaceId}`);
-      
-      // Get marketplace name from Informed.co ID
-      const marketplaceName = marketplaceIdMap[item.marketplaceId];
-      if (!marketplaceName) {
-        console.log(`Unknown marketplace ID: ${item.marketplaceId}, skipping`);
-        skipped++;
-        continue;
-      }
-
-      console.log(`Marketplace: ${marketplaceName}`);
-
-      // Find matching listing based on marketplace-specific SKU strategy
-      let listing = null;
-      matchingAttempts++;
-
-      if (marketplaceName === 'Walmart') {
-        // For Walmart, match by external_id (Walmart Item ID)
-        const { data } = await supabase
-          .from('listings')
-          .select('*, products(*)')
-          .eq('user_id', userId)
-          .eq('external_id', item.sku)
-          .single();
-        listing = data;
-        console.log(`Walmart lookup by external_id=${item.sku}: ${listing ? 'FOUND' : 'NOT FOUND'}`);
-      } else if (marketplaceName === 'Amazon') {
-        // For Amazon, match by sku (ASIN)
-        const { data } = await supabase
-          .from('listings')
-          .select('*, products(*)')
-          .eq('user_id', userId)
-          .eq('sku', item.sku)
-          .single();
-        listing = data;
-        console.log(`Amazon lookup by sku=${item.sku}: ${listing ? 'FOUND' : 'NOT FOUND'}`);
-      }
-
-      if (!listing) {
-        console.log(`No matching listing found for ${marketplaceName} SKU: ${item.sku}`);
-        skipped++;
-        continue;
-      }
-
-      if (!listing.products) {
-        console.log(`Listing found but no product attached: ${item.sku}`);
-        skipped++;
-        continue;
-      }
-
-      // Check if we have required product data
-      const currentSourcePrice = parseFloat(listing.products.current_source_price);
-      const shippingCost = parseFloat(listing.products.shipping_cost) || 0;
-      const minPrice = parseFloat(listing.minimum_resell_price);
-
-      if (!currentSourcePrice || currentSourcePrice <= 0) {
-        console.log(`Missing or invalid source price for ${item.sku}: ${listing.products.current_source_price}`);
-        skipped++;
-        continue;
-      }
-
-      if (!minPrice || minPrice <= 0) {
-        console.log(`Missing or invalid minimum resell price for ${item.sku}: ${listing.minimum_resell_price}`);
-        skipped++;
-        continue;
-      }
-
-      console.log(`✅ Valid update for ${item.sku}: cost=${currentSourcePrice}, shipping=${shippingCost}, minPrice=${minPrice}`);
-      
-      updates.push({
-        sku: item.sku,
-        marketplaceId: item.marketplaceId, // Use Informed.co's marketplace ID (17860 or 17961)
-        cost: currentSourcePrice,
-        minPrice: minPrice,
-        shippingCost: shippingCost
-      });
-    } catch (error) {
-      console.error(`Error processing item ${item.sku}:`, error);
-      skipped++;
+    if (error) {
+      console.error('Error fetching listings for full sync:', error);
+      return [];
     }
-  }
 
-  console.log(`Processing complete: ${updates.length} updates generated, ${skipped} skipped, ${matchingAttempts} matching attempts`);
-  return updates;
+    console.log(`Found ${listings?.length || 0} listings with valid pricing data`);
+
+    for (const listing of listings || []) {
+      try {
+        const marketplaceName = listing.marketplaces.name;
+        const marketplaceId = marketplaceIdMap[marketplaceName];
+        
+        if (!marketplaceId) {
+          console.log(`Unsupported marketplace: ${marketplaceName}, skipping listing ${listing.id}`);
+          continue;
+        }
+
+        // Determine SKU based on marketplace
+        let sku;
+        if (marketplaceName === 'Walmart') {
+          sku = listing.external_id; // Walmart Item ID
+        } else if (marketplaceName === 'Amazon') {
+          sku = listing.sku; // ASIN
+        }
+
+        if (!sku) {
+          console.log(`Missing SKU for ${marketplaceName} listing ${listing.id}, skipping`);
+          continue;
+        }
+
+        const currentSourcePrice = parseFloat(listing.products.current_source_price);
+        const minPrice = parseFloat(listing.minimum_resell_price);
+
+        console.log(`✅ Adding ${marketplaceName} listing: SKU=${sku}, cost=${currentSourcePrice}, minPrice=${minPrice}`);
+        
+        updates.push({
+          sku: sku,
+          marketplaceId: marketplaceId,
+          cost: currentSourcePrice,
+          minPrice: minPrice
+        });
+
+      } catch (error) {
+        console.error(`Error processing listing ${listing.id}:`, error);
+      }
+    }
+
+    console.log(`Full sync complete: ${updates.length} updates generated`);
+    return updates;
+
+  } catch (error) {
+    console.error('Error in generateAllPriceUpdates:', error);
+    return [];
+  }
 }
 
 // DEPRECATED: All batch processing functions removed - using daily sync only

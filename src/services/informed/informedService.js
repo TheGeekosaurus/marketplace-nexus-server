@@ -165,9 +165,9 @@ class InformedService {
 
   // CSV Generation Method
   generatePriceUpdateCSV(updates) {
-    const headers = 'SKU,COST,CURRENCY,MIN_PRICE,CURRENT_SHIPPING,MARKETPLACE_ID\n';
+    const headers = 'SKU,COST,CURRENCY,MIN_PRICE,MARKETPLACE_ID\n';
     const rows = updates.map(update => 
-      `${update.sku},${update.cost},USD,${update.minPrice},${update.shippingCost || ''},${update.marketplaceId}`
+      `${update.sku},${update.cost},USD,${update.minPrice},${update.marketplaceId}`
     ).join('\n');
     
     return headers + rows;
@@ -190,12 +190,14 @@ class InformedService {
     const shippingCost = parseFloat(product.shipping_cost) || 0;
     const cost = baseCost + shippingCost;
     
-    const marketplaceFee = parseFloat(listing.marketplace_fee_percentage) || 15;
+    const marketplaceFeePercentage = parseFloat(listing.marketplace_fee_percentage) || 15;
     const minProfitMargin = parseFloat(userSettings.minimum_profit_margin) || 10;
+    const feeDecimal = marketplaceFeePercentage / 100;
     
-    // Calculate minimum price: cost + marketplace fees + minimum profit
-    const feeAmount = cost * (marketplaceFee / 100);
-    const minPrice = cost + feeAmount + minProfitMargin;
+    // Calculate minimum price using proper formula: price = (cost + profit) / (1 - fee_percentage)
+    // This ensures: final_price - (final_price * fee_percentage) = cost + profit
+    const costPlusProfit = cost + minProfitMargin;
+    const minPrice = costPlusProfit / (1 - feeDecimal);
     
     // Calculate reasonable max price (20% above min price)
     const maxPrice = minPrice * 1.2;

@@ -13,25 +13,31 @@ class RepricingService {
    * Calculate minimum resell price based on user settings
    * @param {number} sourceCost - Product cost (price + shipping)
    * @param {Object} settings - User pricing settings
+   * @param {number} marketplaceFeePercentage - Custom marketplace fee percentage (or null for default)
    * @returns {number} Minimum resell price
    */
-  calculateMinimumResellPrice(sourceCost, settings) {
+  calculateMinimumResellPrice(sourceCost, settings, marketplaceFeePercentage = null) {
+    // Use custom marketplace fee or default to 15%
+    const feePercentage = marketplaceFeePercentage || 15;
+    const feeDecimal = feePercentage / 100;
+
     if (!settings || !settings.minimum_profit_type || !settings.minimum_profit_value) {
-      // Default to 15% marketplace fee only
-      return sourceCost * 1.15;
+      // Use proper calculation: price = cost / (1 - fee_percentage)
+      return Math.round((sourceCost / (1 - feeDecimal)) * 100) / 100;
     }
 
-    let minimumPrice = sourceCost;
+    let costPlusProfit = sourceCost;
 
     // Apply profit margin
     if (settings.minimum_profit_type === 'dollar') {
-      minimumPrice = sourceCost + settings.minimum_profit_value;
+      costPlusProfit = sourceCost + settings.minimum_profit_value;
     } else if (settings.minimum_profit_type === 'percentage') {
-      minimumPrice = sourceCost * (1 + settings.minimum_profit_value / 100);
+      costPlusProfit = sourceCost * (1 + settings.minimum_profit_value / 100);
     }
 
-    // Add marketplace fee (15% estimate)
-    minimumPrice = minimumPrice * 1.15;
+    // Calculate final price using: price = (cost + profit) / (1 - fee_percentage)
+    // This ensures: final_price - (final_price * fee_percentage) = cost + profit
+    const minimumPrice = costPlusProfit / (1 - feeDecimal);
 
     return Math.round(minimumPrice * 100) / 100; // Round to 2 decimal places
   }
@@ -59,7 +65,6 @@ class RepricingService {
   }) {
     try {
       const totalCost = newSourcePrice + shippingCost;
-      const minimumResellPrice = this.calculateMinimumResellPrice(totalCost, settings);
 
       // Get all active listings for this product
       const { data: listings, error: listingsError } = await this.supabase
@@ -70,6 +75,8 @@ class RepricingService {
           sku, 
           price, 
           marketplace_id,
+          marketplace_fee_percentage,
+          minimum_resell_price,
           marketplaces!inner(name)
         `)
         .eq('product_id', productId)
@@ -91,57 +98,65 @@ class RepricingService {
         results.processed++;
 
         try {
-          if (this.needsRepricing(listing, minimumResellPrice)) {
-            if (settings?.automated_repricing_enabled) {
-              // Update price on marketplace
-              const updateResult = await this.updateMarketplacePrice({
-                listing,
-                newPrice: minimumResellPrice,
-                userId,
-                marketplace: listing.marketplaces.name
-              });
+          // Calculate minimum resell price for this specific listing using its marketplace fee
+          const minimumResellPrice = this.calculateMinimumResellPrice(
+            totalCost, 
+            settings, 
+            listing.marketplace_fee_percentage
+          );
 
-              if (updateResult.success) {
-                // Update listing in database
-                await this.supabase
-                  .from('listings')
-                  .update({
-                    price: minimumResellPrice,
-                    minimum_resell_price: minimumResellPrice,
-                    updated_at: new Date().toISOString()
-                  })
-                  .eq('id', listing.id);
+          // ALWAYS update minimum resell price in database when source costs change
+          const currentMinPrice = listing.minimum_resell_price || 0;
+          if (minimumResellPrice !== currentMinPrice) {
+            await this.supabase
+              .from('listings')
+              .update({
+                minimum_resell_price: minimumResellPrice,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', listing.id);
+          }
 
-                // Log successful repricing
-                await auditService.logRepricing(
-                  listing.id,
-                  productId,
-                  userId,
-                  listing.price,
-                  minimumResellPrice,
-                  listing.marketplaces.name,
-                  'minimum_profit_threshold'
-                );
+          // Check if automated repricing should update the marketplace price
+          if (this.needsRepricing(listing, minimumResellPrice) && settings?.automated_repricing_enabled) {
+            // Update price on marketplace
+            const updateResult = await this.updateMarketplacePrice({
+              listing,
+              newPrice: minimumResellPrice,
+              userId,
+              marketplace: listing.marketplaces.name
+            });
 
-                // Note: Informed.co updates now handled by daily sync only
-
-                results.updated++;
-              } else {
-                results.failed++;
-                results.errors.push({
-                  listingId: listing.id,
-                  error: updateResult.error
-                });
-              }
-            } else {
-              // Just update minimum resell price for notification
+            if (updateResult.success) {
+              // Update the actual price in database
               await this.supabase
                 .from('listings')
                 .update({
-                  minimum_resell_price: minimumResellPrice,
+                  price: minimumResellPrice,
                   updated_at: new Date().toISOString()
                 })
                 .eq('id', listing.id);
+
+              // Log successful repricing
+              await auditService.logRepricing(
+                listing.id,
+                productId,
+                userId,
+                listing.price,
+                minimumResellPrice,
+                listing.marketplaces.name,
+                'minimum_profit_threshold'
+              );
+
+              // Note: Informed.co updates now handled by daily sync only
+
+              results.updated++;
+            } else {
+              results.failed++;
+              results.errors.push({
+                listingId: listing.id,
+                error: updateResult.error
+              });
             }
           }
         } catch (error) {
