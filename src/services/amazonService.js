@@ -596,13 +596,14 @@ class AmazonService {
       // Only add if we have a SKU (check both possible column names)
       if (listing['seller-sku'] || listing['sku']) {
         // Transform to our standard format - Enhanced for GET_MERCHANT_LISTINGS_ALL_DATA
+        const quantity = parseInt(listing['quantity'] || listing['available-quantity'] || 0);
         const transformed = {
           sku: listing['seller-sku'] || listing['sku'],
           asin: listing['asin1'] || listing['asin2'] || listing['asin3'] || listing['asin'] || '',
           productName: listing['item-name'] || listing['product-name'] || listing['title'] || 'Unknown Product',
           price: parseFloat(listing['price'] || listing['list-price'] || 0),
-          quantity: parseInt(listing['quantity'] || listing['available-quantity'] || 0),
-          status: listing['status'] || listing['listing-status'] || 'ACTIVE',
+          quantity: quantity,
+          status: quantity > 0 ? 'ACTIVE' : 'INACTIVE', // Base status on inventory level
           condition: listing['item-condition'] || listing['condition'] || 'new',
           imageUrl: listing['image-url'] || listing['main-image-url'] || null,
           description: listing['item-description'] || listing['description'] || '',
