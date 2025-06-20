@@ -96,10 +96,22 @@ const refreshProduct = async (req, res, next) => {
     const { productId, sourceUrl, sourceType, currentPrice, settings } = value;
     const userId = req.headers['x-user-id'];
 
+    // Normalize source type for provider factory
+    const normalizeSourceType = (sourceType) => {
+      if (!sourceType) return 'auto-detect';
+      const type = sourceType.toLowerCase();
+      if (type.includes('homedepot')) return 'homedepot';
+      if (type.includes('amazon')) return 'amazon';
+      if (type.includes('walmart')) return 'walmart';
+      return sourceType; // Return as-is if no match
+    };
+
+    const normalizedSourceType = normalizeSourceType(sourceType);
+    
     // Fetch latest product data using sourcing service
-    console.log(`Refreshing product ${productId} from ${sourceType}...`);
+    console.log(`Refreshing product ${productId} from ${sourceType} (normalized: ${normalizedSourceType})...`);
     const sourcingResult = await productSourcingService.fetchFromUrl(sourceUrl, {
-      marketplace: sourceType
+      marketplace: normalizedSourceType
     });
     
     if (!sourcingResult.success) {
