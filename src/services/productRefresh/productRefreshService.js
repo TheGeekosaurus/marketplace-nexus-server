@@ -35,7 +35,8 @@ class ProductRefreshService {
       .select('*')
       .eq('user_id', userId)
       .or(`last_checked_at.is.null,last_checked_at.lt.now() - ${refreshInterval} * interval '1 hour'`)
-      .not('source_url', 'is', null);
+      .not('source_url', 'is', null)
+      .eq('refresh_enabled', true);
 
     if (error) {
       throw error;
@@ -237,12 +238,13 @@ class ProductRefreshService {
       errors: []
     };
 
-    // Get products
+    // Get products (only those with refresh enabled)
     const { data: products, error } = await this.supabase
       .from('products')
       .select('*')
       .in('id', productIds)
-      .eq('user_id', userId);
+      .eq('user_id', userId)
+      .eq('refresh_enabled', true);
 
     if (error) {
       throw error;
