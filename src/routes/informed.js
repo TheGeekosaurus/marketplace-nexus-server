@@ -253,10 +253,10 @@ async function syncMissingPrices(userId, integration) {
       .update({
         status: 'completed',
         completed_at: new Date().toISOString(),
-        items_processed: reportData.length,
+        items_processed: updates.length,
         items_succeeded: updates.length,
-        items_failed: reportData.length - updates.length,
-        response_data: { reportStatus, feedSubmission, updates }
+        items_failed: 0,
+        response_data: { feedSubmission, updates }
       })
       .eq('id', logEntry.id);
 
