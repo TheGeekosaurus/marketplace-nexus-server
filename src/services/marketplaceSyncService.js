@@ -281,7 +281,7 @@ class MarketplaceSyncService {
           const existingListing = existingMap.get(amazonListing.asin);
 
           if (existingListing) {
-            // Update existing listing (preserve marketplace_fee_percentage)
+            // Update existing listing (preserve marketplace_fee_percentage and images)
             const { error } = await this.supabase
               .from('listings')
               .update({
@@ -290,7 +290,7 @@ class MarketplaceSyncService {
                 current_stock_level: amazonListing.quantity,
                 is_available: amazonListing.quantity > 0,
                 status: amazonListing.status === 'ACTIVE' ? 'active' : 'inactive',
-                images: amazonListing.imageUrl ? [amazonListing.imageUrl] : [],
+                // NOTE: images intentionally NOT updated to preserve manual image settings
                 description: amazonListing.description || null,
                 external_data: amazonListing,
                 last_synced_at: new Date().toISOString(),
