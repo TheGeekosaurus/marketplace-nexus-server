@@ -186,7 +186,7 @@ class InformedService {
   }
 
   calculateCostAndMinPrice(listing, product, userSettings = {}) {
-    const baseCost = parseFloat(product.base_price) || 0;
+    const baseCost = parseFloat(product.current_source_price) || 0;
     const shippingCost = parseFloat(product.shipping_cost) || 0;
     const cost = baseCost + shippingCost;
     

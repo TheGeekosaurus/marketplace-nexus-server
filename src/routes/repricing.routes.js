@@ -67,7 +67,7 @@ router.post('/product/:productId', authMiddleware, async (req, res) => {
     const result = await repricingService.processProductRepricing({
       productId: product.id,
       userId,
-      newSourcePrice: product.current_source_price || product.base_price,
+      newSourcePrice: product.current_source_price || 0,
       shippingCost: product.shipping_cost || 0,
       settings
     });

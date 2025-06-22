@@ -297,12 +297,12 @@ const syncWalmartOrders = asyncHandler(async (req, res) => {
             if (listing.product_id) {
               const { data: product } = await supabase
                 .from('products')
-                .select('current_source_price, base_price')
+                .select('current_source_price')
                 .eq('id', listing.product_id)
                 .single();
 
               if (product) {
-                itemData.source_cost = product.current_source_price || product.base_price || 0;
+                itemData.source_cost = product.current_source_price || 0;
               }
             }
             syncResults.items.linked++;
