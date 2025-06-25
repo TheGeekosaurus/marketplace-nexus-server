@@ -288,7 +288,7 @@ async function generateAllPriceUpdates(userId) {
   };
 
   try {
-    // Get all active listings with products that have valid pricing data
+    // Get all listings with products that have valid pricing data
     const { data: listings, error } = await supabase
       .from('listings')
       .select(`
@@ -297,7 +297,6 @@ async function generateAllPriceUpdates(userId) {
         marketplaces!inner(name)
       `)
       .eq('user_id', userId)
-      .eq('status', 'active')
       .not('products.current_source_price', 'is', null)
       .not('minimum_resell_price', 'is', null)
       .gt('products.current_source_price', 0)
