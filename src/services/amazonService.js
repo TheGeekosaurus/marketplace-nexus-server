@@ -867,8 +867,8 @@ class AmazonService {
         productType: productType,
         patches: [
           {
-            op: 'replace',
-            path: '/fulfillment_availability',
+            op: 'merge',
+            path: '/attributes/fulfillment_availability',
             value: [
               {
                 fulfillment_channel_code: 'DEFAULT',
