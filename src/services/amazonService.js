@@ -934,6 +934,16 @@ class AmazonService {
         data: error.response?.data
       });
       
+      // Extract Amazon's actual error message
+      if (error.response?.data) {
+        const amazonError = error.response.data;
+        const errorDetails = amazonError.errors?.[0]?.message || 
+                           amazonError.error?.description || 
+                           amazonError.message || 
+                           JSON.stringify(amazonError);
+        throw new Error(`Failed to update Amazon inventory for SKU ${sku}: ${errorDetails} (Status: ${error.response.status})`);
+      }
+      
       throw new Error(`Failed to update Amazon inventory for SKU ${sku}: ${error.message}`);
     }
   }

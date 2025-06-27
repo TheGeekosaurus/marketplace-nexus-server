@@ -849,19 +849,18 @@ class WalmartService {
     try {
       const correlationId = uuidv4();
       
-      // Default to today's date if not provided
-      if (!inventoryAvailableDate) {
-        inventoryAvailableDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
-      }
-      
       const payload = {
         sku: sku,
         quantity: {
           unit: unit,
           amount: quantity
-        },
-        inventoryAvailableDate: inventoryAvailableDate
+        }
       };
+      
+      // Only add inventoryAvailableDate if explicitly provided
+      if (inventoryAvailableDate) {
+        payload.inventoryAvailableDate = inventoryAvailableDate;
+      }
       
       console.log(`Updating inventory for SKU ${sku} to ${quantity} ${unit}`);
       
