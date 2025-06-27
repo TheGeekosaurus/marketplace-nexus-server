@@ -889,6 +889,15 @@ class WalmartService {
       if (error.response) {
         console.error('Response status:', error.response.status);
         console.error('Response data:', JSON.stringify(error.response.data, null, 2));
+        console.error('Response headers:', error.response.headers);
+        
+        // Throw error with Walmart's actual error message
+        const walmartError = error.response.data;
+        const errorMessage = walmartError?.errors?.[0]?.description || 
+                           walmartError?.error?.description || 
+                           walmartError?.message || 
+                           error.message;
+        throw new Error(`Failed to update inventory for SKU ${sku}: ${errorMessage} (Status: ${error.response.status})`);
       }
       throw new Error(`Failed to update inventory for SKU ${sku}: ${error.message}`);
     }

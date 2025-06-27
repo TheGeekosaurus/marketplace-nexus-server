@@ -445,10 +445,14 @@ const updateInventory = asyncHandler(async (req, res) => {
     });
   } catch (error) {
     console.error('Error updating Walmart inventory:', error);
+    
+    // Pass through the actual error message which now includes Walmart's response
     return res.status(500).json({
       success: false,
       message: error.message || 'Failed to update inventory',
-      error: error.response ? error.response.data : null
+      error: error.response ? error.response.data : null,
+      sku: sku,
+      attemptedQuantity: quantity
     });
   }
 });
