@@ -95,6 +95,9 @@ class MarketplaceSyncService {
                 // NOTE: current_stock_level is intentionally NOT updated here - background inventory sync is authoritative
                 // NOTE: is_available will be updated by background inventory sync based on actual stock levels
                 status: walmartListing.publishedStatus === 'PUBLISHED' ? 'active' : 'inactive',
+                published_status: walmartListing.publishedStatus,
+                lifecycle_status: walmartListing.lifecycleStatus,
+                unpublished_reasons: walmartListing.unpublishedReasons,
                 upc: walmartListing.upc || walmartListing.gtin || null,
                 external_data: walmartListing,
                 last_synced_at: new Date().toISOString(),
@@ -136,6 +139,9 @@ class MarketplaceSyncService {
                 // NOTE: current_stock_level will be set by background inventory sync
                 // NOTE: is_available will be set by background inventory sync
                 status: walmartListing.publishedStatus === 'PUBLISHED' ? 'active' : 'inactive',
+                published_status: walmartListing.publishedStatus,
+                lifecycle_status: walmartListing.lifecycleStatus,
+                unpublished_reasons: walmartListing.unpublishedReasons,
                 marketplace_id: marketplaceId,
                 user_id: userId,
                 product_id: null, // Explicitly set to null for marketplace-only listings

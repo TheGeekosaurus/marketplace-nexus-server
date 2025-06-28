@@ -88,6 +88,7 @@ function simplifyWalmartItem(item) {
     price: parseFloat(item.price?.amount) || 0,
     publishedStatus: item.publishedStatus,
     lifecycleStatus: item.lifecycleStatus,
+    unpublishedReasons: item.unpublishedReasons,
     inventoryCount: 0,  // Will be updated by background inventory sync
     availability: item.availability,  // Keep original availability status
     imageUrl: null,  // Not provided in getAllItems response
