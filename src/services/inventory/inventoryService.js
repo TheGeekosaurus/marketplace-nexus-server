@@ -70,7 +70,7 @@ class InventoryService {
         results.processed++;
 
         try {
-          let targetInventory = newStockLevel || 0;
+          let targetInventory = Number(newStockLevel) || 0;
 
           // Handle marketplace-specific stock logic
           if (listing.marketplaces.name === 'Amazon' && isInStock) {
