@@ -191,16 +191,20 @@ class WalmartOrderService {
     const orderLines = walmartOrder.orderLines?.orderLine || [];
     let orderStatus = 'Created';
     
-    if (orderLines.every(line => this.mapOrderStatus(line) === 'Delivered')) {
-      orderStatus = 'Delivered';
-    } else if (orderLines.every(line => this.mapOrderStatus(line) === 'Cancelled')) {
-      orderStatus = 'Cancelled';
-    } else if (orderLines.some(line => this.mapOrderStatus(line) === 'Shipped')) {
-      orderStatus = 'Shipped';
-    } else if (orderLines.some(line => this.mapOrderStatus(line) === 'Acknowledged')) {
-      orderStatus = 'Acknowledged';
-    } else if (orderLines.some(line => this.mapOrderStatus(line) === 'Created')) {
-      orderStatus = 'Created';
+    if (orderLines.length > 0) {
+      const lineStatuses = orderLines.map(line => this.mapOrderStatus(line));
+      
+      if (lineStatuses.every(status => status === 'Delivered')) {
+        orderStatus = 'Delivered';
+      } else if (lineStatuses.every(status => status === 'Cancelled')) {
+        orderStatus = 'Cancelled';
+      } else if (lineStatuses.some(status => status === 'Shipped')) {
+        orderStatus = 'Shipped';
+      } else if (lineStatuses.some(status => status === 'Acknowledged')) {
+        orderStatus = 'Acknowledged';
+      } else if (lineStatuses.some(status => status === 'Refunded')) {
+        orderStatus = 'Refunded';
+      }
     }
 
     return {
