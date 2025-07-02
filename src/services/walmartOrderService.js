@@ -189,16 +189,18 @@ class WalmartOrderService {
     
     // Get overall order status (check all line items)
     const orderLines = walmartOrder.orderLines?.orderLine || [];
-    let orderStatus = 'pending';
+    let orderStatus = 'Created';
     
-    if (orderLines.every(line => this.mapOrderStatus(line) === 'delivered')) {
-      orderStatus = 'delivered';
-    } else if (orderLines.every(line => this.mapOrderStatus(line) === 'cancelled')) {
-      orderStatus = 'cancelled';
-    } else if (orderLines.some(line => this.mapOrderStatus(line) === 'shipped')) {
-      orderStatus = 'shipped';
-    } else if (orderLines.some(line => this.mapOrderStatus(line) === 'processing')) {
-      orderStatus = 'processing';
+    if (orderLines.every(line => this.mapOrderStatus(line) === 'Delivered')) {
+      orderStatus = 'Delivered';
+    } else if (orderLines.every(line => this.mapOrderStatus(line) === 'Cancelled')) {
+      orderStatus = 'Cancelled';
+    } else if (orderLines.some(line => this.mapOrderStatus(line) === 'Shipped')) {
+      orderStatus = 'Shipped';
+    } else if (orderLines.some(line => this.mapOrderStatus(line) === 'Acknowledged')) {
+      orderStatus = 'Acknowledged';
+    } else if (orderLines.some(line => this.mapOrderStatus(line) === 'Created')) {
+      orderStatus = 'Created';
     }
 
     return {
