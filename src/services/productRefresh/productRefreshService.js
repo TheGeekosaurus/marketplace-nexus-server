@@ -117,6 +117,11 @@ class ProductRefreshService {
         listingIds
       );
 
+      // If price changed, update minimum resell price for all listings
+      if (changes.priceChanged) {
+        await this.updateMinimumResellPrices(product, latestData.price);
+      }
+
       // Note: Informed.co updates now handled by daily sync only
 
       return {
@@ -273,6 +278,59 @@ class ProductRefreshService {
     });
 
     return results;
+  }
+
+  /**
+   * Update minimum resell prices for all listings of a product when source price changes
+   */
+  async updateMinimumResellPrices(product, newSourcePrice) {
+    try {
+      // Get user's profit settings from profiles table
+      const { data: userSettings } = await this.supabase
+        .from('profiles')
+        .select('minimum_profit_type, minimum_profit_value')
+        .eq('id', product.user_id)
+        .single();
+
+      // Get all active listings for this product
+      const { data: listings } = await this.supabase
+        .from('listings')
+        .select('id, marketplace_fee_percentage')
+        .eq('product_id', product.id)
+        .eq('user_id', product.user_id);
+
+      if (!listings || listings.length === 0) {
+        return;
+      }
+
+      const totalCost = newSourcePrice + (parseFloat(product.shipping_cost) || 0);
+
+      // Import repricing service for calculation
+      const repricingService = require('../repricing/repricingService');
+
+      // Update minimum resell price for each listing
+      for (const listing of listings) {
+        const minimumResellPrice = repricingService.calculateMinimumResellPrice(
+          totalCost,
+          userSettings,
+          listing.marketplace_fee_percentage
+        );
+
+        // Update the listing's minimum resell price
+        await this.supabase
+          .from('listings')
+          .update({
+            minimum_resell_price: minimumResellPrice,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', listing.id);
+      }
+
+      console.log(`Updated minimum resell prices for ${listings.length} listings of product ${product.id}`);
+    } catch (error) {
+      console.error(`Error updating minimum resell prices for product ${product.id}:`, error);
+      // Don't throw - this shouldn't fail the entire refresh
+    }
   }
 }
 

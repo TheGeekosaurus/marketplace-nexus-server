@@ -57,11 +57,11 @@ router.post('/product/:productId', authMiddleware, async (req, res) => {
       });
     }
 
-    // Get user settings
+    // Get user settings from profiles table
     const { data: settings } = await repricingService.supabase
-      .from('user_settings')
+      .from('profiles')
       .select('automated_repricing_enabled, minimum_profit_type, minimum_profit_value')
-      .eq('user_id', userId)
+      .eq('id', userId)
       .single();
 
     const result = await repricingService.processProductRepricing({
@@ -97,11 +97,11 @@ router.post('/calculate', authMiddleware, async (req, res) => {
       });
     }
 
-    // Get user settings
+    // Get user settings from profiles table
     const { data: settings } = await repricingService.supabase
-      .from('user_settings')
+      .from('profiles')
       .select('minimum_profit_type, minimum_profit_value')
-      .eq('user_id', userId)
+      .eq('id', userId)
       .single();
 
     const totalCost = sourceCost + shippingCost;

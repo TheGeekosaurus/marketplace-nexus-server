@@ -332,15 +332,19 @@ async function generateAllPriceUpdates(userId) {
           continue;
         }
 
-        const currentSourcePrice = parseFloat(listing.products.current_source_price);
+        // Calculate total cost including shipping
+        const currentSourcePrice = parseFloat(listing.products.current_source_price) || 0;
+        const shippingCost = parseFloat(listing.products.shipping_cost) || 0;
+        const totalCost = currentSourcePrice + shippingCost;
+        
         const minPrice = parseFloat(listing.minimum_resell_price);
 
-        console.log(`✅ Adding ${marketplaceName} listing: SKU=${sku}, cost=${currentSourcePrice}, minPrice=${minPrice}`);
+        console.log(`✅ Adding ${marketplaceName} listing: SKU=${sku}, cost=${totalCost} (price: ${currentSourcePrice} + shipping: ${shippingCost}), minPrice=${minPrice}`);
         
         updates.push({
           sku: sku,
           marketplaceId: marketplaceId,
-          cost: currentSourcePrice,
+          cost: totalCost,
           minPrice: minPrice
         });
 
