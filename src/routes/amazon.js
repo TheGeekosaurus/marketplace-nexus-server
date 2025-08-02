@@ -369,4 +369,70 @@ router.post('/update-inventory', async (req, res) => {
   }
 });
 
+/**
+ * Update price for a specific SKU
+ * @route POST /api/amazon/update-price
+ * @access Private
+ */
+router.post('/update-price', async (req, res) => {
+  try {
+    const { connection, sku, price, productType } = req.body;
+
+    // Validate request body
+    if (!connection || !sku || price === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: 'Connection, SKU, and price are required'
+      });
+    }
+
+    const { refreshToken, sellerId } = connection;
+
+    if (!refreshToken || !sellerId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid connection data - missing refreshToken or sellerId'
+      });
+    }
+
+    // Validate price is a positive number
+    if (!Number.isFinite(price) || price <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Price must be a positive number'
+      });
+    }
+
+    console.log(`Updating Amazon price for SKU ${sku} to $${price}`);
+    
+    // Update the price via Amazon SP-API
+    const priceResponse = await amazonService.updatePrice(
+      refreshToken,
+      sellerId,
+      sku,
+      price,
+      productType || 'PRODUCT'
+    );
+
+    return res.status(200).json({
+      success: priceResponse.success,
+      message: priceResponse.message,
+      data: {
+        sku: priceResponse.sku,
+        submissionId: priceResponse.submissionId,
+        status: priceResponse.status,
+        issues: priceResponse.issues || [],
+        warning: priceResponse.warning
+      }
+    });
+  } catch (error) {
+    console.error('Error updating Amazon price:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to update price',
+      error: error.response ? error.response.data : null
+    });
+  }
+});
+
 module.exports = router;

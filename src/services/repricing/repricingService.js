@@ -215,8 +215,7 @@ class RepricingService {
         case 'walmart':
           return await this.updateWalmartPrice(listing, newPrice, credentials.credentials);
         case 'amazon':
-          // Amazon price updates would go here
-          throw new Error('Amazon price updates not yet implemented');
+          return await this.updateAmazonPrice(listing, newPrice, credentials.credentials, userId);
         case 'facebook':
           // Facebook price updates would go here
           throw new Error('Facebook price updates not yet implemented');
@@ -259,6 +258,59 @@ class RepricingService {
 
       return { success: true };
     } catch (error) {
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Update Amazon price
+   * @private
+   */
+  async updateAmazonPrice(listing, newPrice, credentials, userId) {
+    const backendUrl = process.env.BACKEND_URL || 'https://marketplace-nexus-server.onrender.com';
+    
+    try {
+      const response = await fetch(`${backendUrl}/api/amazon/update-price`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          connection: {
+            refreshToken: credentials.refreshToken,
+            sellerId: credentials.sellerId
+          },
+          sku: listing.sku, // For Amazon, use the SKU directly (which is the ASIN)
+          price: newPrice
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to update Amazon price');
+      }
+
+      const result = await response.json();
+      
+      if (result.success) {
+        console.log(`Amazon price update submitted for SKU ${listing.sku}, submission ID: ${result.data.submissionId}`);
+        return { 
+          success: true, 
+          submissionId: result.data.submissionId,
+          warning: result.data.warning
+        };
+      } else {
+        console.warn(`Amazon price update failed for SKU ${listing.sku}:`, result.message);
+        return {
+          success: false,
+          error: result.message
+        };
+      }
+    } catch (error) {
+      console.error(`Amazon price update error for SKU ${listing.sku}:`, error);
       return {
         success: false,
         error: error.message

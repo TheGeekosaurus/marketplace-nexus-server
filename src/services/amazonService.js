@@ -947,6 +947,139 @@ class AmazonService {
       throw new Error(`Failed to update Amazon inventory for SKU ${sku}: ${error.message}`);
     }
   }
+
+  /**
+   * Update price for a specific SKU using patchListingsItem API
+   * @param {string} refreshToken - Amazon refresh token
+   * @param {string} sellerId - Amazon seller ID
+   * @param {string} sku - Product SKU to update
+   * @param {number} price - New price
+   * @param {string} [productType] - Amazon product type (default: 'PRODUCT')
+   * @param {string} [marketplaceId] - Amazon marketplace ID (default: US)
+   * @returns {Promise<object>} - Update response
+   */
+  async updatePrice(refreshToken, sellerId, sku, price, productType = 'PRODUCT', marketplaceId = US_MARKETPLACE_ID) {
+    try {
+      console.log(`Updating Amazon price for SKU ${sku} to $${price}`);
+      
+      // Get access token
+      const accessToken = await this.getAccessToken(refreshToken);
+      
+      // Prepare the JSON Patch payload for price update
+      const payload = {
+        productType: productType,
+        patches: [
+          {
+            op: 'replace',
+            path: '/attributes/purchasable_offer',
+            value: [
+              {
+                marketplace_id: marketplaceId,
+                currency: 'USD',
+                our_price: [
+                  {
+                    schedule: [
+                      {
+                        value_with_tax: price
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      };
+
+      console.log('Amazon price update payload:', JSON.stringify(payload, null, 2));
+
+      // Make the PATCH request
+      const response = await axios({
+        method: 'patch',
+        url: `${this.baseURL}/listings/2021-08-01/items/${sellerId}/${encodeURIComponent(sku)}`,
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'x-amz-access-token': accessToken,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'User-Agent': 'MarketBridge/1.0'
+        },
+        params: {
+          marketplaceIds: marketplaceId,
+          issueLocale: 'en_US'
+        },
+        data: payload
+      });
+
+      console.log(`Amazon price update response for SKU ${sku}:`, {
+        status: response.data.status,
+        submissionId: response.data.submissionId,
+        issues: response.data.issues?.length || 0
+      });
+
+      // Check if the update was accepted
+      if (response.data.status === 'ACCEPTED') {
+        return {
+          success: true,
+          sku: response.data.sku,
+          submissionId: response.data.submissionId,
+          status: response.data.status,
+          message: 'Price update submitted successfully'
+        };
+      } else if (response.data.status === 'INVALID') {
+        // Log detailed issues for INVALID status
+        console.error(`Amazon price update INVALID for SKU ${sku}:`, response.data.issues);
+        const issueMessages = response.data.issues?.map(issue => issue.message).join('; ') || 'Unknown validation error';
+        return {
+          success: false,
+          sku: response.data.sku,
+          submissionId: response.data.submissionId,
+          status: response.data.status,
+          issues: response.data.issues,
+          message: `Price update validation failed: ${issueMessages}`
+        };
+      } else {
+        // VALID status (validation preview) or other statuses
+        console.warn(`Amazon price update status ${response.data.status} for SKU ${sku}:`, response.data.issues);
+        return {
+          success: response.data.status === 'VALID',
+          sku: response.data.sku,
+          submissionId: response.data.submissionId,
+          status: response.data.status,
+          issues: response.data.issues,
+          message: `Price update submitted with status: ${response.data.status}`
+        };
+      }
+    } catch (error) {
+      console.error(`Error updating Amazon price for SKU ${sku}:`, {
+        message: error.message,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data
+      });
+      
+      // Extract Amazon's actual error message
+      if (error.response?.data) {
+        const amazonError = error.response.data;
+        
+        // Handle different error response formats
+        let errorMessage = '';
+        if (amazonError.errors && amazonError.errors.length > 0) {
+          errorMessage = amazonError.errors.map(err => err.message || err.code).join('; ');
+        } else if (amazonError.error) {
+          errorMessage = amazonError.error.description || amazonError.error.message || JSON.stringify(amazonError.error);
+        } else if (amazonError.message) {
+          errorMessage = amazonError.message;
+        } else {
+          errorMessage = JSON.stringify(amazonError);
+        }
+        
+        throw new Error(`Failed to update Amazon price for SKU ${sku}: ${errorMessage} (Status: ${error.response.status})`);
+      }
+      
+      throw new Error(`Failed to update Amazon price for SKU ${sku}: ${error.message}`);
+    }
+  }
 }
 
 module.exports = new AmazonService();

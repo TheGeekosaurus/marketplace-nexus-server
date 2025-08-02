@@ -795,28 +795,24 @@ class WalmartService {
     try {
       const correlationId = uuidv4();
       
+      // Official Walmart API payload structure
       const payload = {
-        sku: sku,
-        pricing: [
-          {
-            currentPriceType: "BASE",
-            currentPrice: {
-              currency: "USD",
-              amount: price
-            }
-          }
-        ]
+        amount: price.toString(), // Price amount value for an item (as string)
+        skus: [sku]              // List of skus for price update (as array)
       };
       
       console.log(`Updating price for SKU ${sku} to $${price}`);
+      console.log('Payload:', JSON.stringify(payload, null, 2));
       
       const response = await axios({
         method: 'put',
         url: `${this.apiUrl}/${this.apiVersion}/price`,
         headers: {
+          'WM_MARKET': 'cl',                    // Required header for marketplace
           'WM_SEC.ACCESS_TOKEN': accessToken,
           'WM_SVC.NAME': 'Walmart Marketplace',
           'WM_QOS.CORRELATION_ID': correlationId,
+          'WM_CONSUMER.CHANNEL.TYPE': 'API',    // Channel type for tracking
           'Accept': 'application/json',
           'Content-Type': 'application/json'
         },
@@ -824,13 +820,38 @@ class WalmartService {
         timeout: config.walmart.requestTimeout
       });
 
-      console.log(`Price update response for SKU ${sku}:`, response.data);
+      console.log(`Price update response for SKU ${sku}:`, JSON.stringify(response.data, null, 2));
       return response.data;
     } catch (error) {
       console.error(`Error updating price for SKU ${sku}:`, error.message);
       if (error.response) {
         console.error('Response status:', error.response.status);
         console.error('Response data:', JSON.stringify(error.response.data, null, 2));
+        console.error('Response headers:', JSON.stringify(error.response.headers, null, 2));
+        
+        // Extract detailed error information from Walmart's response
+        const errorData = error.response.data;
+        let errorMessage = `Failed to update price for SKU ${sku}`;
+        
+        if (errorData?.payload?.errors && errorData.payload.errors.length > 0) {
+          const firstError = errorData.payload.errors[0];
+          errorMessage += `: ${firstError.description || firstError.code || 'Unknown error'}`;
+          
+          // Log all errors for debugging
+          errorData.payload.errors.forEach((err, index) => {
+            console.error(`Error ${index + 1}:`, {
+              code: err.code,
+              description: err.description,
+              info: err.info,
+              severity: err.severity,
+              category: err.category
+            });
+          });
+        } else if (errorData?.message) {
+          errorMessage += `: ${errorData.message}`;
+        }
+        
+        throw new Error(errorMessage);
       }
       throw new Error(`Failed to update price for SKU ${sku}: ${error.message}`);
     }
