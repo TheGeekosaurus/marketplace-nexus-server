@@ -185,4 +185,50 @@ router.post('/update-marketplace-price', authMiddleware, async (req, res) => {
   }
 });
 
+/**
+ * Daily repricing check - find and update listings below minimum price
+ * Called by Edge Function on daily schedule
+ */
+router.post('/check-below-minimum', authMiddleware, async (req, res) => {
+  try {
+    const { userId, settings } = req.body;
+    
+    // Verify service role or user permission
+    if (req.headers['x-service-role'] !== 'true' && req.user?.id !== userId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Unauthorized'
+      });
+    }
+
+    // Check if user has automated repricing enabled
+    if (!settings?.automated_repricing_enabled) {
+      return res.json({
+        success: true,
+        results: {
+          processed: 0,
+          updated: 0,
+          skipped: 0,
+          failed: 0,
+          errors: []
+        },
+        message: 'Automated repricing disabled for user'
+      });
+    }
+
+    const result = await repricingService.checkAndRepriceBelowMinimum(userId, settings);
+
+    res.json({
+      success: true,
+      ...result
+    });
+  } catch (error) {
+    console.error('Daily repricing check error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
 module.exports = router;

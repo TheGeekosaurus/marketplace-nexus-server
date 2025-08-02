@@ -317,6 +317,155 @@ class RepricingService {
 
     return results;
   }
+
+  /**
+   * Daily repricing check - find and reprice listings below minimum price
+   * @param {string} userId - User ID to check
+   * @param {Object} settings - User repricing settings
+   * @returns {Object} Results of daily repricing check
+   */
+  async checkAndRepriceBelowMinimum(userId, settings) {
+    try {
+      // Get all active listings where price < minimum_resell_price
+      // and the associated product has repricing_enabled = true
+      const { data: listings, error: listingsError } = await this.supabase
+        .from('listings')
+        .select(`
+          id,
+          external_id,
+          sku,
+          price,
+          minimum_resell_price,
+          marketplace_id,
+          marketplace_fee_percentage,
+          product_id,
+          marketplaces!inner(name),
+          products!inner(id, repricing_enabled)
+        `)
+        .eq('user_id', userId)
+        .eq('status', 'active')
+        .eq('products.repricing_enabled', true)
+        .not('minimum_resell_price', 'is', null)
+        .filter('price', 'lt', 'minimum_resell_price');
+
+      if (listingsError) {
+        throw listingsError;
+      }
+
+      console.log(`[Daily Repricing] Found ${listings?.length || 0} listings below minimum price for user ${userId}`);
+
+      const results = {
+        processed: 0,
+        updated: 0,
+        skipped: 0,
+        failed: 0,
+        errors: []
+      };
+
+      for (const listing of listings || []) {
+        results.processed++;
+
+        try {
+          // Double-check that repricing is enabled for this product
+          if (!listing.products?.repricing_enabled) {
+            results.skipped++;
+            
+            // Log that repricing was skipped
+            await auditService.logRepricing(
+              listing.id,
+              listing.product_id,
+              userId,
+              listing.price,
+              listing.minimum_resell_price,
+              listing.marketplaces.name,
+              'daily_repricing_skipped',
+              'Product repricing disabled'
+            );
+            continue;
+          }
+
+          // Update price on marketplace using the stored minimum_resell_price
+          const updateResult = await this.updateMarketplacePrice({
+            listing,
+            newPrice: listing.minimum_resell_price,
+            userId,
+            marketplace: listing.marketplaces.name
+          });
+
+          if (updateResult.success) {
+            // Update the actual price in database
+            await this.supabase
+              .from('listings')
+              .update({
+                price: listing.minimum_resell_price,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', listing.id);
+
+            // Log successful daily repricing
+            await auditService.logRepricing(
+              listing.id,
+              listing.product_id,
+              userId,
+              listing.price,
+              listing.minimum_resell_price,
+              listing.marketplaces.name,
+              'daily_repricing_applied'
+            );
+
+            results.updated++;
+            console.log(`[Daily Repricing] Updated listing ${listing.sku} from $${listing.price} to $${listing.minimum_resell_price}`);
+          } else {
+            results.failed++;
+            results.errors.push({
+              listingId: listing.id,
+              sku: listing.sku,
+              error: updateResult.error
+            });
+
+            // Log error
+            await auditService.logPriceUpdateError(
+              listing.id,
+              listing.product_id,
+              userId,
+              listing.minimum_resell_price,
+              listing.marketplaces.name,
+              new Error(updateResult.error)
+            );
+          }
+        } catch (error) {
+          results.failed++;
+          results.errors.push({
+            listingId: listing.id,
+            sku: listing.sku,
+            error: error.message
+          });
+
+          console.error(`[Daily Repricing] Error updating listing ${listing.sku}:`, error);
+        }
+      }
+
+      // Log bulk operation
+      await auditService.logBulkOperation(userId, 'daily_repricing', results.processed, {
+        updated: results.updated,
+        skipped: results.skipped,
+        failed: results.failed
+      });
+
+      console.log(`[Daily Repricing] User ${userId}: Processed ${results.processed}, Updated ${results.updated}, Skipped ${results.skipped}, Failed ${results.failed}`);
+
+      return {
+        success: true,
+        results
+      };
+    } catch (error) {
+      console.error(`[Daily Repricing] Error for user ${userId}:`, error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
 }
 
 // Export singleton instance
