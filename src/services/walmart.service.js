@@ -795,10 +795,18 @@ class WalmartService {
     try {
       const correlationId = uuidv4();
       
-      // Official Walmart API payload structure
+      // Official Walmart API payload structure according to documentation
       const payload = {
-        amount: price.toString(), // Price amount value for an item (as string)
-        skus: [sku]              // List of skus for price update (as array)
+        sku: sku,
+        pricing: [
+          {
+            currentPriceType: "BASE",
+            currentPrice: {
+              currency: "USD",
+              amount: parseFloat(price)  // Ensure it's a number, not string
+            }
+          }
+        ]
       };
       
       console.log(`Updating price for SKU ${sku} to $${price}`);
@@ -808,11 +816,10 @@ class WalmartService {
         method: 'put',
         url: `${this.apiUrl}/${this.apiVersion}/price`,
         headers: {
-          'WM_MARKET': 'cl',                    // Required header for marketplace
           'WM_SEC.ACCESS_TOKEN': accessToken,
           'WM_SVC.NAME': 'Walmart Marketplace',
           'WM_QOS.CORRELATION_ID': correlationId,
-          'WM_CONSUMER.CHANNEL.TYPE': 'API',    // Channel type for tracking
+          'WM_CONSUMER.CHANNEL.TYPE': 'API',    // Required header per documentation
           'Accept': 'application/json',
           'Content-Type': 'application/json'
         },
