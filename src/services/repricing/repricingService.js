@@ -39,7 +39,8 @@ class RepricingService {
     // This ensures: final_price - (final_price * fee_percentage) = cost + profit
     const minimumPrice = costPlusProfit / (1 - feeDecimal);
 
-    return Math.round(minimumPrice * 100) / 100; // Round to 2 decimal places
+    // Round to 2 decimal places and ensure proper decimal formatting
+    return Math.ceil(minimumPrice * 100) / 100; // Round UP to 2 decimal places to ensure profit
   }
 
   /**
@@ -405,9 +406,12 @@ class RepricingService {
       }
 
       // Filter listings where price < minimum_resell_price in JavaScript
-      const listingsBelowMinimum = (listings || []).filter(listing => 
-        listing.price < listing.minimum_resell_price
-      );
+      // Only include if the difference is more than $0.01 to avoid tiny updates
+      const PRICE_THRESHOLD = 0.01;
+      const listingsBelowMinimum = (listings || []).filter(listing => {
+        const priceDifference = listing.minimum_resell_price - listing.price;
+        return priceDifference > PRICE_THRESHOLD;
+      });
 
       console.log(`[Daily Repricing] Found ${listingsBelowMinimum.length} listings below minimum price for user ${userId}`);
 
