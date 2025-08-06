@@ -380,6 +380,7 @@ class RepricingService {
     try {
       // Get all active listings where price < minimum_resell_price
       // and the associated product has repricing_enabled = true
+      // Note: We need to use RPC or filter in JavaScript since Supabase doesn't support column comparison
       const { data: listings, error: listingsError } = await this.supabase
         .from('listings')
         .select(`
@@ -397,14 +398,18 @@ class RepricingService {
         .eq('user_id', userId)
         .eq('status', 'active')
         .eq('products.repricing_enabled', true)
-        .not('minimum_resell_price', 'is', null)
-        .filter('price', 'lt', 'minimum_resell_price');
+        .not('minimum_resell_price', 'is', null);
 
       if (listingsError) {
         throw listingsError;
       }
 
-      console.log(`[Daily Repricing] Found ${listings?.length || 0} listings below minimum price for user ${userId}`);
+      // Filter listings where price < minimum_resell_price in JavaScript
+      const listingsBelowMinimum = (listings || []).filter(listing => 
+        listing.price < listing.minimum_resell_price
+      );
+
+      console.log(`[Daily Repricing] Found ${listingsBelowMinimum.length} listings below minimum price for user ${userId}`);
 
       const results = {
         processed: 0,
@@ -414,7 +419,7 @@ class RepricingService {
         errors: []
       };
 
-      for (const listing of listings || []) {
+      for (const listing of listingsBelowMinimum) {
         results.processed++;
 
         try {
