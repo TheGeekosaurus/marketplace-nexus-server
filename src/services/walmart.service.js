@@ -819,7 +819,6 @@ class WalmartService {
           'WM_SEC.ACCESS_TOKEN': accessToken,
           'WM_SVC.NAME': 'Walmart Marketplace',
           'WM_QOS.CORRELATION_ID': correlationId,
-          'WM_CONSUMER.CHANNEL.TYPE': 'API',    // Required header per documentation
           'Accept': 'application/json',
           'Content-Type': 'application/json'
         },
