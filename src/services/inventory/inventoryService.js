@@ -177,11 +177,17 @@ class InventoryService {
 
       switch (marketplace) {
         case 'Walmart':
-          result = await this.walmartService.updateInventory({
-            credentials: credentials.credentials,
-            sku: listing.external_id || listing.sku,
-            quantity: newQuantity
-          });
+          // Get access token first
+          const tokenData = await this.walmartService.getAccessToken(
+            credentials.credentials.clientId,
+            credentials.credentials.clientSecret
+          );
+          
+          result = await this.walmartService.updateInventory(
+            tokenData.access_token,
+            listing.external_id || listing.sku,
+            newQuantity
+          );
           break;
 
         case 'Amazon':

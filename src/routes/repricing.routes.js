@@ -218,6 +218,38 @@ router.post('/check-below-minimum', authMiddleware, async (req, res) => {
 
     const result = await repricingService.checkAndRepriceBelowMinimum(userId, settings);
 
+    // Trigger Informed.co sync after successful daily repricing
+    if (result.success && result.results?.updated > 0) {
+      try {
+        const backendUrl = process.env.BACKEND_URL || 'https://marketplace-nexus-server.onrender.com';
+        const informedResponse = await fetch(`${backendUrl}/api/informed/immediate-sync`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': req.headers.authorization,
+            'X-Service-Role': 'true'
+          },
+          body: JSON.stringify({
+            productIds: [], // Empty array means sync all user's listings
+            reason: 'daily_repricing'
+          })
+        });
+
+        if (informedResponse.ok) {
+          const informedData = await informedResponse.json();
+          result.informedSyncApplied = informedData.success;
+          result.informedSyncResults = { synced: informedData.synced || 0 };
+          
+          if (informedData.synced > 0) {
+            console.log(`[Daily Repricing] Successfully synced ${informedData.synced} updates to Informed.co for user ${userId}`);
+          }
+        }
+      } catch (informedError) {
+        console.error(`[Daily Repricing] Informed.co sync error for user ${userId}:`, informedError);
+        result.informedSyncError = informedError.message;
+      }
+    }
+
     res.json({
       success: true,
       ...result
@@ -264,6 +296,37 @@ router.post('/manual-trigger', authMiddleware, async (req, res) => {
       updated: result.results?.updated || 0,
       failed: result.results?.failed || 0
     });
+
+    // Trigger Informed.co sync after successful manual repricing
+    if (result.success && result.results?.updated > 0) {
+      try {
+        const backendUrl = process.env.BACKEND_URL || 'https://marketplace-nexus-server.onrender.com';
+        const informedResponse = await fetch(`${backendUrl}/api/informed/immediate-sync`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': req.headers.authorization
+          },
+          body: JSON.stringify({
+            productIds: [], // Empty array means sync all user's listings
+            reason: 'manual_repricing'
+          })
+        });
+
+        if (informedResponse.ok) {
+          const informedData = await informedResponse.json();
+          result.informedSyncApplied = informedData.success;
+          result.informedSyncResults = { synced: informedData.synced || 0 };
+          
+          if (informedData.synced > 0) {
+            console.log(`[Manual Repricing] Successfully synced ${informedData.synced} updates to Informed.co for user ${userId}`);
+          }
+        }
+      } catch (informedError) {
+        console.error(`[Manual Repricing] Informed.co sync error for user ${userId}:`, informedError);
+        result.informedSyncError = informedError.message;
+      }
+    }
 
     res.json({
       success: true,

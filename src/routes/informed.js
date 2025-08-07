@@ -158,6 +158,186 @@ router.post('/sync-missing', async (req, res) => {
   }
 });
 
+// Immediate sync - triggered after repricing events
+router.post('/immediate-sync', async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    const { productIds = [], reason = 'repricing_event' } = req.body;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    console.log(`[INFORMED] Immediate sync triggered for user ${userId}, reason: ${reason}`);
+
+    // Get user's integration
+    const { data: integration, error: integrationError } = await supabase
+      .from('third_party_integrations')
+      .select('id, api_key, config')
+      .eq('user_id', userId)
+      .eq('integration_type', 'informed_co')
+      .eq('is_active', true)
+      .single();
+
+    if (integrationError || !integration) {
+      return res.json({ 
+        success: true, 
+        message: 'No active Informed.co integration found',
+        synced: 0
+      });
+    }
+
+    // Get all active listings with their products and minimum prices
+    let query = supabase
+      .from('listings')
+      .select(`
+        id,
+        sku,
+        external_id,
+        minimum_resell_price,
+        marketplace_id,
+        marketplaces!inner(name),
+        products!inner(
+          id,
+          current_source_price,
+          shipping_cost
+        )
+      `)
+      .eq('user_id', userId)
+      .eq('status', 'active')
+      .not('minimum_resell_price', 'is', null)
+      .not('products.current_source_price', 'is', null);
+
+    // If specific productIds provided, filter by them
+    if (productIds.length > 0) {
+      query = query.in('products.id', productIds);
+    }
+
+    const { data: listings, error: listingsError } = await query;
+
+    if (listingsError) {
+      throw listingsError;
+    }
+
+    if (!listings || listings.length === 0) {
+      return res.json({ 
+        success: true, 
+        message: 'No listings found for sync',
+        synced: 0
+      });
+    }
+
+    console.log(`[INFORMED] Found ${listings.length} listings to sync`);
+
+    // Prepare price updates for Informed.co
+    const updates = [];
+    
+    for (const listing of listings) {
+      const cost = (listing.products.current_source_price || 0) + (listing.products.shipping_cost || 0);
+      const minPrice = listing.minimum_resell_price;
+      
+      // Map marketplace names to Informed.co IDs
+      let marketplaceId;
+      if (listing.marketplaces.name === 'Walmart') {
+        marketplaceId = '17860';
+      } else if (listing.marketplaces.name === 'Amazon') {
+        marketplaceId = '17961';
+      } else {
+        continue; // Skip unsupported marketplaces
+      }
+
+      // Use appropriate SKU field based on marketplace
+      const sku = listing.marketplaces.name === 'Walmart' 
+        ? listing.external_id 
+        : listing.sku;
+
+      if (sku && cost > 0 && minPrice > 0) {
+        updates.push({
+          sku,
+          cost: cost.toFixed(2),
+          currency: 'USD',
+          min_price: minPrice.toFixed(2),
+          marketplace_id: marketplaceId
+        });
+      }
+    }
+
+    if (updates.length === 0) {
+      return res.json({ 
+        success: true, 
+        message: 'No valid updates to sync',
+        synced: 0
+      });
+    }
+
+    console.log(`[INFORMED] Syncing ${updates.length} price updates`);
+
+    // Create log entry
+    const { data: logEntry } = await supabase
+      .from('integration_logs')
+      .insert({
+        user_id: userId,
+        integration_id: integration.id,
+        operation_type: 'immediate_sync',
+        status: 'pending',
+        request_data: { reason, product_count: productIds.length, updates_count: updates.length }
+      })
+      .select('id')
+      .single();
+
+    try {
+      // Submit to Informed.co
+      const result = await informedService.submitPriceUpdates(integration.api_key, updates);
+      
+      // Update log with success
+      await supabase
+        .from('integration_logs')
+        .update({
+          status: 'completed',
+          items_processed: updates.length,
+          items_succeeded: updates.length,
+          items_failed: 0,
+          response_data: result,
+          completed_at: new Date().toISOString()
+        })
+        .eq('id', logEntry.id);
+
+      console.log(`[INFORMED] Successfully synced ${updates.length} updates`);
+
+      res.json({ 
+        success: true, 
+        message: `Successfully synced ${updates.length} price updates to Informed.co`,
+        synced: updates.length,
+        log_id: logEntry.id
+      });
+
+    } catch (error) {
+      // Update log with error
+      await supabase
+        .from('integration_logs')
+        .update({
+          status: 'error',
+          items_processed: updates.length,
+          items_succeeded: 0,
+          items_failed: updates.length,
+          error_message: error.message,
+          completed_at: new Date().toISOString()
+        })
+        .eq('id', logEntry.id);
+
+      console.error(`[INFORMED] Sync failed:`, error);
+      throw error;
+    }
+
+  } catch (error) {
+    console.error('Immediate Informed.co sync error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
+  }
+});
+
 // DEPRECATED: Batch updates removed - using daily sync only
 router.post('/batch-updates', async (req, res) => {
   res.json({ 

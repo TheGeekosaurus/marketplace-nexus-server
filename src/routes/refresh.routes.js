@@ -111,16 +111,17 @@ router.post('/refresh/:productId', authMiddleware, async (req, res) => {
       settings?.default_stock_levels || {}
     );
 
-    // If refresh was successful and price changed, trigger repricing
-    if (result.success && result.changes?.priceChanged) {
-      // Get user's repricing settings
+    // If refresh was successful, handle repricing and inventory sync
+    if (result.success) {
+      // Get user's settings for repricing and inventory sync
       const { data: userProfile } = await productRefreshService.supabase
         .from('profiles')
-        .select('automated_repricing_enabled, minimum_profit_type, minimum_profit_value')
+        .select('automated_repricing_enabled, minimum_profit_type, minimum_profit_value, automated_inventory_sync_enabled')
         .eq('id', userId)
         .single();
 
-      if (userProfile?.automated_repricing_enabled) {
+      // Handle repricing if price changed
+      if (result.changes?.priceChanged && userProfile?.automated_repricing_enabled) {
         console.log(`Price changed for product ${productId}, triggering repricing...`);
         
         // Import repricing service
@@ -141,9 +142,65 @@ router.post('/refresh/:productId', authMiddleware, async (req, res) => {
         
         if (repricingResult.success && repricingResult.results?.updated > 0) {
           console.log(`Successfully repriced ${repricingResult.results.updated} listings for product ${productId}`);
+          
+          // Trigger Informed.co sync after successful repricing
+          try {
+            const backendUrl = process.env.BACKEND_URL || 'https://marketplace-nexus-server.onrender.com';
+            const informedResponse = await fetch(`${backendUrl}/api/informed/immediate-sync`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': req.headers.authorization
+              },
+              body: JSON.stringify({
+                productIds: [product.id],
+                reason: 'single_product_repricing'
+              })
+            });
+
+            if (informedResponse.ok) {
+              const informedData = await informedResponse.json();
+              result.informedSyncApplied = informedData.success;
+              result.informedSyncResults = { synced: informedData.synced || 0 };
+              
+              if (informedData.synced > 0) {
+                console.log(`Successfully synced ${informedData.synced} updates to Informed.co`);
+              }
+            }
+          } catch (informedError) {
+            console.error('Informed.co sync error after repricing:', informedError);
+            result.informedSyncError = informedError.message;
+          }
         }
-      } else {
+      } else if (result.changes?.priceChanged) {
         console.log(`Automated repricing disabled for user ${userId}, skipping repricing`);
+      }
+
+      // Handle inventory sync if stock changed
+      if ((result.changes?.stockChanged || result.changes?.availabilityChanged) && userProfile?.automated_inventory_sync_enabled) {
+        console.log(`Stock changed for product ${productId} (stock: ${result.latestData.stockLevel}, in_stock: ${result.latestData.inStock}), triggering inventory sync...`);
+        
+        // Import inventory service
+        const inventoryService = require('../services/inventory/inventoryService');
+        
+        // Process inventory sync for this product
+        const inventoryResult = await inventoryService.syncProductInventory({
+          productId: product.id,
+          userId,
+          newStockLevel: result.latestData.stockLevel,
+          isInStock: result.latestData.inStock,
+          settings: userProfile
+        });
+
+        // Add inventory sync results to response
+        result.inventorySyncApplied = inventoryResult.success;
+        result.inventorySyncResults = inventoryResult.results;
+        
+        if (inventoryResult.success && inventoryResult.results?.updated > 0) {
+          console.log(`Successfully synced inventory for ${inventoryResult.results.updated} listings for product ${productId}`);
+        }
+      } else if (result.changes?.stockChanged || result.changes?.availabilityChanged) {
+        console.log(`Automated inventory sync disabled for user ${userId}, skipping inventory sync`);
       }
     }
 
