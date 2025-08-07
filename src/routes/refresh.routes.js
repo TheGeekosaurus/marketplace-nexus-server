@@ -111,6 +111,42 @@ router.post('/refresh/:productId', authMiddleware, async (req, res) => {
       settings?.default_stock_levels || {}
     );
 
+    // If refresh was successful and price changed, trigger repricing
+    if (result.success && result.changes?.priceChanged) {
+      // Get user's repricing settings
+      const { data: userProfile } = await productRefreshService.supabase
+        .from('profiles')
+        .select('automated_repricing_enabled, minimum_profit_type, minimum_profit_value')
+        .eq('id', userId)
+        .single();
+
+      if (userProfile?.automated_repricing_enabled) {
+        console.log(`Price changed for product ${productId}, triggering repricing...`);
+        
+        // Import repricing service
+        const repricingService = require('../services/repricing/repricingService');
+        
+        // Process repricing for this product
+        const repricingResult = await repricingService.processProductRepricing({
+          productId: product.id,
+          userId,
+          newSourcePrice: result.latestData.price,
+          shippingCost: product.shipping_cost || 0,
+          settings: userProfile
+        });
+
+        // Add repricing results to response
+        result.repricingApplied = repricingResult.success;
+        result.repricingResults = repricingResult.results;
+        
+        if (repricingResult.success && repricingResult.results?.updated > 0) {
+          console.log(`Successfully repriced ${repricingResult.results.updated} listings for product ${productId}`);
+        }
+      } else {
+        console.log(`Automated repricing disabled for user ${userId}, skipping repricing`);
+      }
+    }
+
     res.json(result);
   } catch (error) {
     console.error('Refresh product error:', error);

@@ -231,4 +231,52 @@ router.post('/check-below-minimum', authMiddleware, async (req, res) => {
   }
 });
 
+/**
+ * Manual repricing trigger - reprice all listings below minimum price immediately
+ * Called by user from settings UI
+ */
+router.post('/manual-trigger', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    console.log(`[Manual Repricing] Triggered by user ${userId}`);
+
+    // Get user settings from profiles table
+    const { data: settings, error: settingsError } = await repricingService.supabase
+      .from('profiles')
+      .select('automated_repricing_enabled, minimum_profit_type, minimum_profit_value')
+      .eq('id', userId)
+      .single();
+
+    if (settingsError) {
+      throw settingsError;
+    }
+
+    // Even if automated repricing is disabled, allow manual trigger
+    // This is useful for testing or one-time updates
+    const result = await repricingService.checkAndRepriceBelowMinimum(userId, {
+      ...settings,
+      automated_repricing_enabled: true // Force enable for manual trigger
+    });
+
+    console.log(`[Manual Repricing] Completed for user ${userId}:`, {
+      processed: result.results?.processed || 0,
+      updated: result.results?.updated || 0,
+      failed: result.results?.failed || 0
+    });
+
+    res.json({
+      success: true,
+      message: `Repricing completed: ${result.results?.updated || 0} listings updated`,
+      ...result
+    });
+  } catch (error) {
+    console.error('[Manual Repricing] Error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
 module.exports = router;
