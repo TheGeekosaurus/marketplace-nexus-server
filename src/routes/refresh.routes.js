@@ -146,16 +146,13 @@ router.post('/refresh/:productId', authMiddleware, async (req, res) => {
           // Trigger Informed.co sync after successful repricing
           try {
             const backendUrl = process.env.BACKEND_URL || 'https://marketplace-nexus-server.onrender.com';
-            const informedResponse = await fetch(`${backendUrl}/api/informed/immediate-sync`, {
+            const informedResponse = await fetch(`${backendUrl}/api/informed/sync-missing`, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
-                'Authorization': req.headers.authorization
-              },
-              body: JSON.stringify({
-                productIds: [product.id],
-                reason: 'single_product_repricing'
-              })
+                'Authorization': req.headers.authorization,
+                'X-User-Id': userId
+              }
             });
 
             if (informedResponse.ok) {

@@ -222,17 +222,14 @@ router.post('/check-below-minimum', authMiddleware, async (req, res) => {
     if (result.success && result.results?.updated > 0) {
       try {
         const backendUrl = process.env.BACKEND_URL || 'https://marketplace-nexus-server.onrender.com';
-        const informedResponse = await fetch(`${backendUrl}/api/informed/immediate-sync`, {
+        const informedResponse = await fetch(`${backendUrl}/api/informed/sync-missing`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': req.headers.authorization,
-            'X-Service-Role': 'true'
-          },
-          body: JSON.stringify({
-            productIds: [], // Empty array means sync all user's listings
-            reason: 'daily_repricing'
-          })
+            'X-Service-Role': 'true',
+            'X-User-Id': userId
+          }
         });
 
         if (informedResponse.ok) {
@@ -301,16 +298,13 @@ router.post('/manual-trigger', authMiddleware, async (req, res) => {
     if (result.success && result.results?.updated > 0) {
       try {
         const backendUrl = process.env.BACKEND_URL || 'https://marketplace-nexus-server.onrender.com';
-        const informedResponse = await fetch(`${backendUrl}/api/informed/immediate-sync`, {
+        const informedResponse = await fetch(`${backendUrl}/api/informed/sync-missing`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': req.headers.authorization
-          },
-          body: JSON.stringify({
-            productIds: [], // Empty array means sync all user's listings
-            reason: 'manual_repricing'
-          })
+            'Authorization': req.headers.authorization,
+            'X-User-Id': userId
+          }
         });
 
         if (informedResponse.ok) {
