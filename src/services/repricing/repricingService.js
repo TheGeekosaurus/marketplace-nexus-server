@@ -506,11 +506,12 @@ class RepricingService {
         }
       }
 
-      // Log bulk operation
-      await auditService.logBulkOperation(userId, 'daily_repricing', results.processed, {
+      // Log bulk operation (use 'repricing' to match existing constraint)
+      await auditService.logBulkOperation(userId, 'repricing', results.processed, {
         updated: results.updated,
         skipped: results.skipped,
-        failed: results.failed
+        failed: results.failed,
+        trigger: 'daily_repricing' // Add trigger info to distinguish from manual repricing
       });
 
       console.log(`[Daily Repricing] User ${userId}: Processed ${results.processed}, Updated ${results.updated}, Skipped ${results.skipped}, Failed ${results.failed}`);
