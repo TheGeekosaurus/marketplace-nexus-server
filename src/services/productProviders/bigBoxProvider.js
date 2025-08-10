@@ -17,7 +17,7 @@ class BigBoxProvider extends BaseProvider {
           type: 'product',
           url: url
         },
-        timeout: 30000 // 30 second timeout
+        timeout: 90000 // 90 second timeout for slow BigBox API responses
       });
 
       if (!response.data || !response.data.product) {
