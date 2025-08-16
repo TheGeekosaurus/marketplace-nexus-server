@@ -261,6 +261,116 @@ router.post('/check-below-minimum', authMiddleware, async (req, res) => {
 });
 
 /**
+ * Recalculate minimum prices without updating marketplaces
+ * Called by user from settings UI to update minimum_resell_price in database
+ */
+router.post('/recalculate-minimums', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    console.log(`[Recalculate Minimums] Triggered by user ${userId}`);
+
+    // Get user settings
+    const { data: settings, error: settingsError } = await repricingService.supabase
+      .from('profiles')
+      .select('minimum_profit_type, minimum_profit_value')
+      .eq('id', userId)
+      .single();
+
+    if (settingsError) {
+      throw settingsError;
+    }
+
+    // Get all products with active listings
+    const { data: products, error: productsError } = await repricingService.supabase
+      .from('products')
+      .select(`
+        id,
+        name,
+        current_source_price,
+        shipping_cost,
+        user_id,
+        listings!inner(
+          id,
+          marketplace_fee_percentage,
+          minimum_resell_price,
+          title,
+          status
+        )
+      `)
+      .eq('user_id', userId)
+      .eq('listings.status', 'active');
+
+    if (productsError) {
+      throw productsError;
+    }
+
+    let totalListings = 0;
+    let updatedListings = 0;
+    const updates = [];
+
+    for (const product of products || []) {
+      const totalCost = (product.current_source_price || 0) + (product.shipping_cost || 0);
+      
+      for (const listing of product.listings) {
+        totalListings++;
+        
+        // Calculate new minimum resell price
+        const newMinPrice = repricingService.calculateMinimumResellPrice(
+          totalCost,
+          settings,
+          listing.marketplace_fee_percentage
+        );
+        
+        // Check if update is needed (more than 1 cent difference)
+        const currentMinPrice = listing.minimum_resell_price || 0;
+        if (Math.abs(newMinPrice - currentMinPrice) > 0.01) {
+          // Update the listing's minimum resell price
+          const { error } = await repricingService.supabase
+            .from('listings')
+            .update({
+              minimum_resell_price: newMinPrice,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', listing.id);
+            
+          if (!error) {
+            updatedListings++;
+            updates.push({
+              listingId: listing.id,
+              title: listing.title,
+              productName: product.name,
+              oldMinPrice: currentMinPrice,
+              newMinPrice: newMinPrice,
+              difference: Math.round((newMinPrice - currentMinPrice) * 100) / 100
+            });
+          }
+        }
+      }
+    }
+
+    console.log(`[Recalculate Minimums] Completed for user ${userId}: ${updatedListings}/${totalListings} listings updated`);
+
+    res.json({
+      success: true,
+      message: `Recalculated minimum prices: ${updatedListings} of ${totalListings} listings updated`,
+      results: {
+        totalListings,
+        updatedListings,
+        noChangeNeeded: totalListings - updatedListings,
+        updates: updates.slice(0, 10) // Return first 10 updates as examples
+      }
+    });
+  } catch (error) {
+    console.error('[Recalculate Minimums] Error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+/**
  * Manual repricing trigger - reprice all listings below minimum price immediately
  * Called by user from settings UI
  */
