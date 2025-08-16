@@ -328,6 +328,10 @@ const syncWalmartOrders = asyncHandler(async (req, res) => {
       }
     }
 
+    // Update units_sold for all user's listings after sync
+    console.log('Updating units_sold for all listings...');
+    await supabase.rpc('update_all_listing_units_sold', { p_user_id: userId });
+    
     // Update sync status
     await supabase
       .from('order_sync_status')
