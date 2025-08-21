@@ -36,12 +36,14 @@ class MarketplaceSyncService {
       // Get all existing listings from database for comparison
       const { data: existingListings } = await this.supabase
         .from('listings')
-        .select('id, external_id, last_synced_at, product_id')
+        .select('id, external_id, sku, last_synced_at, product_id')
         .eq('marketplace_id', marketplaceId)
         .eq('user_id', userId);
 
+      // For Walmart, we need to check by SKU (which equals external_id)
+      // Create map using the SKU as key for Walmart  
       const existingMap = new Map(
-        existingListings?.map(l => [l.external_id, l]) || []
+        existingListings?.map(l => [l.sku || l.external_id, l]) || []
       );
 
       // Fetch all listings from Walmart API (paginated)
@@ -251,7 +253,7 @@ class MarketplaceSyncService {
       // Get all existing listings from database for comparison
       const { data: existingListings, error: dbError } = await this.supabase
         .from('listings')
-        .select('id, external_id, last_synced_at, product_id')
+        .select('id, external_id, sku, last_synced_at, product_id')
         .eq('marketplace_id', marketplaceId)
         .eq('user_id', userId);
 
@@ -262,6 +264,7 @@ class MarketplaceSyncService {
 
       console.log(`Found ${existingListings?.length || 0} existing listings in database`);
 
+      // For Amazon, external_id is ASIN, and we lookup by ASIN
       const existingMap = new Map(
         existingListings?.map(l => [l.external_id, l]) || []
       );
